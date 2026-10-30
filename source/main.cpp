@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cstdio>
+#include <cstdarg>
 #include <cstring>
 #include "Config.hpp"
 #include "ProcessMonitor.hpp"
@@ -9,14 +10,14 @@
 #include "ZipHelper.hpp"
 #include "GDriveClient.hpp"
 
-// 1. Desativa subsistema grafico e de interface da libnx
+// 1. Subsistema e ciclo de vida canonico de Sysmodule para libnx / Atmosphere
 extern "C" {
     u32 __nx_applet_type = AppletType_None;
     u32 __nx_fs_num_sessions = 1;
 
     // 2. Heap estatico de 2MB no .bss (padrao canonico para sysmodules do Atmosphere)
     #define INNER_HEAP_SIZE 0x200000 // 2 MiB
-    
+
     void __libnx_initheap(void) {
         static u8 inner_heap[INNER_HEAP_SIZE];
         extern void* fake_heap_start;
@@ -25,9 +26,36 @@ extern "C" {
         fake_heap_start = inner_heap;
         fake_heap_end   = inner_heap + sizeof(inner_heap);
     }
+
+    void __appInit(void) {
+        Result rc = smInitialize();
+        if (R_FAILED(rc))
+            diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_SM));
+
+        rc = setsysInitialize();
+        if (R_SUCCEEDED(rc)) {
+            SetSysFirmwareVersion fw;
+            rc = setsysGetFirmwareVersion(&fw);
+            if (R_SUCCEEDED(rc))
+                hosversionSet(MAKEHOSVERSION(fw.major, fw.minor, fw.micro));
+            setsysExit();
+        }
+
+        rc = fsInitialize();
+        if (R_FAILED(rc))
+            diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_FS));
+
+        fsdevMountSdmc();
+    }
+
+    void __appExit(void) {
+        fsdevUnmountAll();
+        fsExit();
+        smExit();
+    }
 }
 
-// 3. Pool customizado BSD Socket para economizar memoria RAM
+// 3. Pool customizado BSD Socket para economizar memoria RAM no System Pool
 static const SocketInitConfig s_socketInitConfig = {
     .tcp_tx_buf_size     = 0x4000, // 16KB TX
     .tcp_rx_buf_size     = 0x4000, // 16KB RX
@@ -41,18 +69,46 @@ static const SocketInitConfig s_socketInitConfig = {
 };
 
 static bool s_running = true;
+static bool s_pmdmntReady = false;
+static bool s_pminfoReady = false;
+static bool s_nifmReady   = false;
+static bool s_socketReady = false;
+
+static void logSysmodule(const char* fmt, ...) {
+    FILE* f = fopen("sdmc:/config/gdrive-sync/sysmodule.log", "a");
+    if (!f) return;
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    fprintf(f, "\n");
+    va_end(args);
+    fclose(f);
+}
 
 static void cleanupServices() {
-    socketExit();
-    nifmExit();
-    pminfoExit();
-    pmdmntExit();
-    fsdevUnmountAll();
-    fsExit();
-    smExit();
+    if (s_socketReady) { socketExit(); s_socketReady = false; }
+    if (s_nifmReady)   { nifmExit();   s_nifmReady   = false; }
+    if (s_pminfoReady) { pminfoExit(); s_pminfoReady = false; }
+    if (s_pmdmntReady) { pmdmntExit(); s_pmdmntReady = false; }
+}
+
+static bool ensureNetworkServices() {
+    if (!s_nifmReady) {
+        if (R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
+            s_nifmReady = true;
+        }
+    }
+    if (!s_socketReady) {
+        if (R_SUCCEEDED(socketInitialize(&s_socketInitConfig))) {
+            s_socketReady = true;
+        }
+    }
+    return s_nifmReady && s_socketReady;
 }
 
 static bool isInternetConnected() {
+    if (!ensureNetworkServices()) return false;
+
     NifmInternetConnectionType connType;
     u32 wifiState = 0;
     NifmInternetConnectionStatus connStatus;
@@ -62,30 +118,36 @@ static bool isInternetConnected() {
 }
 
 int main(int argc, char* argv[]) {
-    // Inicializacao dos servicos essenciais do Horizon OS
-    Result rc = smInitialize();
-    if (R_FAILED(rc)) return 1;
-
-    rc = fsInitialize();
-    if (R_FAILED(rc)) { smExit(); return 1; }
-
-    rc = fsdevMountSdmc();
-    if (R_FAILED(rc)) { fsExit(); smExit(); return 1; }
-
-    rc = pmdmntInitialize();
-    if (R_FAILED(rc)) { fsdevUnmountAll(); fsExit(); smExit(); return 1; }
-
-    rc = pminfoInitialize();
-    if (R_FAILED(rc)) { pmdmntExit(); fsdevUnmountAll(); fsExit(); smExit(); return 1; }
-
-    rc = nifmInitialize(NifmServiceType_User);
-    if (R_FAILED(rc)) { pminfoExit(); pmdmntExit(); fsdevUnmountAll(); fsExit(); smExit(); return 1; }
-
-    rc = socketInitialize(&s_socketInitConfig);
-    if (R_FAILED(rc)) { nifmExit(); pminfoExit(); pmdmntExit(); fsdevUnmountAll(); fsExit(); smExit(); return 1; }
-
     // Garante que a estrutura de pastas no SD exista
     Config::ensureDirectories();
+    logSysmodule("[BOOT] Sysmodule CloudSave iniciado!");
+
+    // Inicializa pmdmnt e pminfo com resiliencia para o boot2
+    for (int attempt = 0; attempt < 30; ++attempt) {
+        if (!s_pmdmntReady && R_SUCCEEDED(pmdmntInitialize())) {
+            s_pmdmntReady = true;
+        }
+        if (!s_pminfoReady && R_SUCCEEDED(pminfoInitialize())) {
+            s_pminfoReady = true;
+        }
+        if (s_pmdmntReady && s_pminfoReady) break;
+        svcSleepThread(500'000'000ULL); // 500ms
+    }
+
+    // Aguarda qlaunch (Home Menu - 0x0100000000001000) caso estejamos subindo no boot2
+    if (s_pmdmntReady) {
+        u64 qlaunchPid = 0;
+        for (int i = 0; i < 60; ++i) {
+            if (R_SUCCEEDED(pmdmntGetProcessId(&qlaunchPid, 0x0100000000001000ULL)) && qlaunchPid != 0) {
+                break;
+            }
+            svcSleepThread(500'000'000ULL);
+        }
+    }
+
+    ensureNetworkServices();
+    logSysmodule("[READY] Servicos prontos (pmdmnt=%d, pminfo=%d, nifm=%d, socket=%d)",
+                 s_pmdmntReady, s_pminfoReady, s_nifmReady, s_socketReady);
 
     ProcessMonitor monitor;
     SaveManager saveManager;
@@ -105,11 +167,13 @@ int main(int argc, char* argv[]) {
                 if (!deviceCodeRequested) {
                     if (gdrive.requestDeviceCode()) {
                         deviceCodeRequested = true;
+                        logSysmodule("[AUTH] Device code solicitado com sucesso.");
                     }
                 } else {
                     // Tenta polling para verificar se o usuario digitou o codigo no celular/PC
                     if (gdrive.pollAuthorization()) {
                         deviceCodeRequested = false;
+                        logSysmodule("[AUTH] Autorizacao concluida com sucesso!");
                     }
                 }
             }
@@ -117,7 +181,8 @@ int main(int argc, char* argv[]) {
 
         // 2. Monitoramento de Jogos e Backup de Saves
         u64 closedTitleId = 0;
-        if (monitor.hasGameJustExited(closedTitleId)) {
+        if (s_pmdmntReady && s_pminfoReady && monitor.hasGameJustExited(closedTitleId)) {
+            logSysmodule("[EVENT] Jogo fechado detectado: 0x%016llX", (unsigned long long)closedTitleId);
             // Um jogo foi fechado. Verifica se ha conta de usuario ativa
             AccountUid uid{};
             if (saveManager.getActiveAccount(uid)) {
@@ -134,6 +199,8 @@ int main(int argc, char* argv[]) {
                         // Envia para o Google Drive
                         if (gdrive.uploadSaveArchive(closedTitleId, zipPath)) {
                             saveManager.markSaveUploaded(closedTitleId, newCrc);
+                            logSysmodule("[SYNC] Save 0x%016llX enviado ao Google Drive (CRC=0x%08X)",
+                                         (unsigned long long)closedTitleId, newCrc);
                         }
                     }
                 }
