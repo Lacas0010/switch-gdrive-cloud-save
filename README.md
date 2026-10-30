@@ -188,16 +188,27 @@ Abra o arquivo `sdmc:/config/gdrive-sync/config.json` em qualquer editor de text
 
 ## 🎮 Controles e Navegação do Aplicativo
 
-O aplicativo possui layout intuitivo com feedback sonoro e visual:
-
+### Menu Principal
 | Botão | Ação |
 | :---: | :--- |
-| **D-Pad / Analógico Cima/Baixo** | Navega entre os cards de configuração. |
-| **Botão (A)** | Abre o teclado virtual do Switch para editar o campo selecionado. |
-| **Botão (B)** | Fecha modais abertas ou sai do aplicativo. |
-| **Botão (X)** | Inicia manualmente o Daemon em segundo plano. |
+| **D-Pad / Analógico Cima/Baixo** | Navega entre as opções e configurações. |
+| **Botão (A)** | Seleciona a opção destacada ou abre o teclado para editar campos. |
+| **Opção "Subir Todos os Saves Agora"** | Compacta e envia todos os saves do usuário ativo em lote com barra de progresso. |
+| **Opção "Selecionar Jogos para Sincronizar"** | Abre a lista interativa de jogos com nomes reais para marcar e sincronizar. |
+| **Botão (X)** | Inicia ou encerra o Daemon em segundo plano. |
 | **Botão (Y)** | Ativa ou desativa o **Auto-Boot** no início do console (`boot2.flag`). |
-| **Botão (+)** | Salva as configurações atuais e fecha o aplicativo com segurança. |
+| **Botão (-)** | Abre a tela de Guia Rápido e Ajuda. |
+| **Botão (+)** | Fecha o aplicativo com segurança. |
+
+### Tela de Seleção de Jogos ("Selecionar Jogos para Sincronizar")
+| Botão | Ação |
+| :---: | :--- |
+| **D-Pad / Analógico Cima/Baixo** | Navega pela lista de jogos (com rolagem/scroll suave). |
+| **Botão (A)** | Marca ou desmarca o jogo (`[X]` / `[ ]`). |
+| **Botão (Y)** | Marca todos ou desmarca todos os jogos de uma vez. |
+| **Botão (X)** | Salva a seleção atual como padrão (`whitelist`) para o Sysmodule automático. |
+| **Botão (+)** | Inicia imediatamente o upload apenas dos jogos selecionados. |
+| **Botão (B)** | Cancela e volta para o menu principal. |
 
 ---
 
