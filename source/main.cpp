@@ -150,6 +150,14 @@ static void recoverPendingSavesFromDisk() {
 }
 
 int main(int argc, char* argv[]) {
+    // Garante que o cartao SD (sdmc:/) esteja montado com resiliencia para o boot2
+    for (int attempt = 0; attempt < 30; ++attempt) {
+        if (R_SUCCEEDED(fsdevMountSdmc())) {
+            break;
+        }
+        svcSleepThread(500'000'000ULL); // 500ms
+    }
+
     // Garante que a estrutura de pastas no SD exista
     Config::ensureDirectories();
     logSysmodule("[BOOT] Sysmodule CloudSave iniciado!");
