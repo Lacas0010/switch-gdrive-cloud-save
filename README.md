@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.2-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.2" />
+  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.3-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.3" />
   <img src="https://img.shields.io/badge/Plataforma-Nintendo%20Switch-E60012?style=for-the-badge&logo=nintendo-switch&logoColor=white" alt="Nintendo Switch" />
   <img src="https://img.shields.io/badge/CFW-Atmosph%C3%A8re%201.7%2B-00D2FF?style=for-the-badge" alt="Atmosphere" />
   <img src="https://img.shields.io/badge/Google-Drive%20API%20v3-4285F4?style=for-the-badge&logo=googledrive&logoColor=white" alt="Google Drive" />
@@ -20,7 +20,7 @@
 
 ## 📌 Sumário
 1. [Visão Geral](#-visão-geral)
-2. [Novidades da Versão 0.0.2](#-novidades-da-versão-002)
+2. [Novidades da Versão 0.0.3](#-novidades-da-versão-003)
 3. [Componentes da Suite](#-componentes-da-suite)
 4. [Como Funciona (Arquitetura)](#-como-funciona-arquitetura)
 5. [Instalação Rápida no Cartão SD](#-instalação-rápida-no-cartão-sd)
@@ -49,44 +49,45 @@ O **Google Drive Cloud Save Suite** transforma o seu Nintendo Switch desbloquead
 
 ---
 
-## 🚀 Novidades da Versão 0.0.2
+## 🚀 Novidades da Versão 0.0.3
 
-Esta versão traz melhorias substanciais de estabilidade, novas opções na interface gráfica e tratamento especializado de redes sem fio:
+Esta versão consolida a maturidade do projeto com foco em resiliência contra condições de corrida do Horizon OS, gerenciamento enxuto de memória RAM/heap, restauração inteligente e logs persistentes:
 
-1. **Subir Todos os Saves Agora (Upload em Lote):**
-   - Nova opção no menu principal da GUI que varre todos os saves do usuário ativo e realiza o upload sequencial com barra de progresso em tempo real e tela de resumo com contagem de sucessos/falhas.
-   - Força a criação do arquivo ZIP mesmo se o hash CRC32 for idêntico ao do último envio, permitindo forçar um backup completo a qualquer momento.
+1. **Resolução de Race Condition no Encerramento de Jogos (File Lock no Horizon OS):**
+   - O Horizon OS leva alguns segundos para descarregar o cache de save e fechar os descritores de arquivo após a finalização do processo do jogo.
+   - O delay pós-término foi ampliado para **3.5 segundos**, acompanhado de um **retry loop com backoff exponencial** (até 3 tentativas) em caso de partição ocupada (`0x202` / `FsError_PartitionBusy`).
 
-2. **Selecionar Jogos para Sincronizar (Lista Interativa com Nomes Reais):**
-   - Visualização com rolagem (scroll) de todos os jogos instalados que possuem saves.
-   - Resolução automática dos nomes reais dos jogos via biblioteca de metadados oficiais (`ns` / `nacp`), com fallback inteligente para o Title ID caso os metadados não existam.
-   - Controles ágeis: seleção individual (`A`), marcar/desmarcar todos (`Y`), envio imediato da seleção (`+`) e salvar como filtro permanente (`X`).
+2. **Detecção e Mapeamento Preciso de Saves por Usuário:**
+   - Obtenção do perfil ativo via `accountGetPreselectedUser` (perfil que iniciou o jogo), com fallback para `accountGetLastOpenedUser` e varredura de contas locais.
+   - Fallback de partição: se o perfil ativo não possuir save para o jogo, o sistema busca e mapeia automaticamente o UID do perfil local correto.
+   - Suporte adicional a dados de dispositivo (`FsSaveDataType_Device`).
+   - Validação prévia de integridade: aborta o empacotamento se a partição estiver vazia (`0` arquivos), prevenindo a geração de ZIPs corrompidos.
 
-3. **Modo Whitelist Persistente no Sysmodule:**
-   - Possibilidade de salvar a lista de jogos monitorados no `config.json` (`"sync_mode": "whitelist"` e `"tracked_titles"`). Quando ativo, o daemon em background ignora jogos não autorizados pelo usuário.
+3. **Gerenciamento Estrito de Heap e RAM (Sysmodule & libcurl):**
+   - Buffers de compactação zlib em streaming contínuo direto no SDMC padronizados em blocos de **32 KB** (`STREAM_BUFFER_SIZE = 32 * 1024`).
+   - `CURLOPT_BUFFERSIZE` configurado em **16 KB** para todas as requisições HTTP (`POST`, `PATCH`, `GET`), economizando memória no System Pool do Atmosphere.
+   - Renovação proativa do token de acesso OAuth 2.0 antes de iniciar montagens de requisições multipart.
 
-4. **Tolerância a Jogos com Comunicação Local (LDN / Y-Comm):**
-   - Jogos como *Pokémon Sword/Shield*, *Pokémon Scarlet/Violet* e *Animal Crossing* ativam o chip sem fio em modo ad-hoc local para recursos multiplayer, desconectando o Switch do roteador Wi-Fi (e de fones Bluetooth).
-   - O daemon agora detecta quando a rede está desconectada e aguarda ativamente até 15 segundos pela reconexão automática com a rede residencial antes de tentar o upload.
+4. **Tratamento Automático de Saves na Lixeira do Google Drive:**
+   - Detecção inteligente no `findFileInFolder`: caso o arquivo do save esteja na lixeira do Drive, o cliente executa automaticamente um `PATCH {"trashed": false}`, restaurando e atualizando a versão existente sem criar arquivos duplicados ou órfãos.
 
-5. **Fila Offline de Uploads Pendentes (`s_pendingSaves` & Auto-Recuperação):**
-   - Se a internet não estiver disponível ao fechar o jogo, o save compactado é mantido no SD em `sdmc:/config/gdrive-sync/temp/pending_[TitleID]_[Timestamp].zip`.
-   - O daemon tenta o envio periódico em segundo plano e, ao ligar o Switch (`boot2`), recupera e transmite automaticamente quaisquer saves pendentes em disco.
+5. **Sistema de Log Persistente Padronizado (`sync.log`):**
+   - Registro cronológico e detalhado gravado em `sdmc:/config/gdrive-sync/sync.log` com timestamps legíveis:
+     - Detecção de término de processo com TitleID.
+     - Tentativas e status da montagem (`Mount save: SUCCESS/FAILED`).
+     - Geração do ZIP com caminho, hash CRC32 e tamanho em bytes.
+     - Chamada à API Google Drive com File ID retornado e código de status HTTP.
 
-6. **Montagem Resiliente do Cartão SD no Boot:**
-   - Adicionado loop de espera e retry de até 15 segundos para `fsdevMountSdmc()`, prevenindo falhas de inicialização em cartões SD mais lentos ou no arranque a frio (`boot2.flag`).
-
-7. **Normalização de Title IDs de Atualizações (Patches):**
-   - Mapeamento de Title IDs que executam sob a flag de patch/update (`titleId & ~0x800ULL`), garantindo a localização exata do save original de qualquer jogo atualizado.
-
-8. **Upload por Streaming cURL:**
-   - Implementação de `CURLOPT_READFUNCTION` com streaming contínuo de arquivo (`fopen`/`fread`), evitando sobrecarga de buffer na memória RAM e validando detalhadamente códigos de resposta HTTP.
-
-9. **Atualizar do Drive (Restauração Inteligente / Download se Nuvem for Mais Recente):**
+6. **Atualizar do Drive (Restauração Inteligente no Menu Principal):**
    - Novo botão dedicado no menu principal da interface Homebrew (.NRO).
    - Compara o timestamp UTC (`modifiedTime`) de cada save na pasta do Google Drive com o timestamp local do save no console (`timestamps.json` ou data dos arquivos internos).
-   - Se `Timestamp_Drive > Timestamp_Local`: realiza o download do arquivo ZIP em chunks com barra de progresso, cria automaticamente uma cópia de segurança do save local atual em `sdmc:/config/gdrive-sync/backups/<TitleID>_backup.zip`, descompacta diretamente na partição `save:/` e executa `fsdevCommitDevice("save")` para persistência segura na memória interna/SD.
-   - Saves onde a versão local já é igual ou mais recente são ignorados automaticamente, com relatório detalhado exibido em um modal ao final da operação.
+   - Se `Timestamp_Drive > Timestamp_Local`: realiza o download do arquivo ZIP em chunks com barra de progresso, cria backup de segurança do save anterior em `sdmc:/config/gdrive-sync/backups/<TitleID>_backup.zip`, descompacta em `save:/` e executa **`fsdevCommitDevice("save")`** para persistência obrigatória na NAND/SD.
+
+7. **Upload Manual em Lote ou Seletivo com Nomes Reais dos Jogos:**
+   - Opções para subir todos os saves de uma só vez ou selecionar jogos individualmente através de uma lista interativa com suporte aos metadados oficiais (`ns` / `nacp`) e modo whitelist persistente.
+
+8. **Tolerância a Comunicação Local (LDN / Y-Comm) com Espera de 1 Minuto:**
+   - Aguarda até 60 segundos pela reconexão automática com o roteador Wi-Fi após fechar jogos como Pokémon Sword/Shield antes de enviar o save ou salvar na fila offline.
 
 ---
 
@@ -97,7 +98,7 @@ Esta versão traz melhorias substanciais de estabilidade, novas opções na inte
 | **Daemon CloudSave** | Sysmodule (`exefs.nsp`) | `sdmc:/atmosphere/contents/4200000000000010/` | Fica ativo em segundo plano no Switch monitorando o encerramento dos jogos via serviços do sistema (`pm:dmnt` / `pm:info`). |
 | **Google Drive Sync** | Aplicativo (`.nro`) | `sdmc:/switch/gdrive-sync/gdrive-sync.nro` | Interface visual completa aberta pelo Homebrew Menu para configurar credenciais, parear conta, testar conexão, listar e subir saves manualmente. |
 | **Configurações** | Arquivo JSON | `sdmc:/config/gdrive-sync/config.json` | Armazena tokens OAuth 2.0 (access_token, refresh_token), client_id, client_secret, folder_id, modo de sincronização e títulos autorizados. |
-| **Logs de Diagnóstico** | Arquivo Texto | `sdmc:/config/gdrive-sync/gdrive_sync.log` | Registra detalhes operacionais, códigos de status HTTP e eventuais erros de rede. |
+| **Logs de Diagnóstico** | Arquivo Texto | `sdmc:/config/gdrive-sync/sync.log` | Registra detalhes operacionais com timestamps, códigos de status HTTP, geração de ZIPs e eventos de rede. |
 
 ---
 

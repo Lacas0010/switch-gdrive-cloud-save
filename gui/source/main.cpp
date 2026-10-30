@@ -1148,7 +1148,7 @@ int main(int argc, char* argv[]) {
 
             // Título e Versão
             display.drawText(42, 16, "GOOGLE DRIVE CLOUD SAVE", Gfx::Colors::TEXT_WHITE, 2, true);
-            display.drawText(44, 46, "Atmosphere CFW  •  Suite de Sincronizacao v1.2.0", Gfx::Colors::TEXT_MUTED, 1);
+            display.drawText(44, 46, "Atmosphere CFW  •  Suite de Sincronizacao v0.0.3", Gfx::Colors::TEXT_MUTED, 1);
 
             // Badges de Status no Header (Direita)
             // Wi-Fi

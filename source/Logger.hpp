@@ -31,3 +31,4 @@ namespace Logger {
         fclose(f);
     }
 }
+
