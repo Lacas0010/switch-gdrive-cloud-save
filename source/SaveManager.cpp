@@ -88,7 +88,7 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
 
     // Formata nome do arquivo de destino
     char filename[128];
-    snprintf(filename, sizeof(filename), "%s/save_%016llx.zip", Config::TEMP_DIR.c_str(), titleId);
+    snprintf(filename, sizeof(filename), "%s/save_%016llx.zip", Config::TEMP_DIR.c_str(), (unsigned long long)titleId);
     outZipPath = filename;
 
     // 3. Compacta o diretorio montado "save:/" diretamente para o SD
@@ -147,7 +147,7 @@ void SaveManager::saveState() {
     if (!f) return;
 
     for (const auto& [tid, crc] : m_savedCrcs) {
-        fprintf(f, "%016llx:%08x\n", tid, crc);
+        fprintf(f, "%016llx:%08x\n", (unsigned long long)tid, crc);
     }
     fclose(f);
 }

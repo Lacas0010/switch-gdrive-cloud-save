@@ -5,6 +5,7 @@
 #include <ctime>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 #include <curl/curl.h>
 
 namespace {
@@ -432,7 +433,7 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
 
     // Extrai o nome do arquivo a ser salvo (ex: save_0100000000010000.zip)
     char fileNameBuf[64];
-    snprintf(fileNameBuf, sizeof(fileNameBuf), "save_%016llx.zip", titleId);
+    snprintf(fileNameBuf, sizeof(fileNameBuf), "save_%016llx.zip", (unsigned long long)titleId);
     std::string fileName = fileNameBuf;
 
     // Checa se ja existe um arquivo com esse nome dentro de folderId para evitar duplicatas
