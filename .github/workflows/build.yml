@@ -1,0 +1,30 @@
+name: Build Switch Cloud Save Suite
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build with devkitPro Docker
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/workspace \
+            -w /workspace \
+            devkitpro/devkita64:latest \
+            /bin/bash -c "dkp-pacman -Sy --noconfirm switch-dev switch-curl switch-mbedtls switch-zlib && make dist"
+
+      - name: Upload SD Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: switch-gdrive-cloud-save-dist
+          path: dist/
