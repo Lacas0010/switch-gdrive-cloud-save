@@ -86,9 +86,11 @@ $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
 $(OUTPUT).nacp:
 	@nacptool --create "$(APP_TITLE)" "$(APP_AUTHOR)" "$(APP_VERSION)" $@
 
+LDFLAGS         := -specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,-Map,$(OUTPUT).map -Wl,--gc-sections
+
 $(OUTPUT).elf: $(OFILES)
 	@echo "Ligando $(notdir $@)..."
-	@$(CXX) -Wl,-Map,$(OUTPUT).map -Wl,--gc-sections $(ARCH) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
+	@$(CXX) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
 
 $(BUILD)/main.o: $(TOPDIR)/source/main.cpp
 	@echo "Compilando $(notdir $<)..."

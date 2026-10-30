@@ -109,9 +109,11 @@ $(OUTPUT).nsp: $(OUTPUT).nso $(TOPDIR)/npdm.json
 $(OUTPUT).nso: $(OUTPUT).elf
 	@elf2nso $< $@
 
+LDFLAGS         := -specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,-Map,$(OUTPUT).map -Wl,--gc-sections
+
 $(OUTPUT).elf: $(OFILES)
 	@echo "Ligando $(notdir $@)..."
-	@$(CXX) -Wl,-Map,$(OUTPUT).map -Wl,--gc-sections $(ARCH) $^ $(LIBPATHS) $(LIBS) -o $@
+	@$(CXX) $(LDFLAGS) $^ $(LIBPATHS) $(LIBS) -o $@
 
 %.o: %.cpp
 	@echo "Compilando $(notdir $<)..."
