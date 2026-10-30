@@ -171,7 +171,6 @@ int main(int argc, char* argv[]) {
     // Servicos
     smInitialize();
     fsInitialize();
-    fsdevInit();
     socketInitializeDefault();
     nifmInitialize(NifmServiceType_User);
     pmdmntInitialize();
@@ -346,7 +345,6 @@ int main(int argc, char* argv[]) {
     pmdmntExit();
     nifmExit();
     socketExit();
-    fsdevExit();
     fsExit();
     smExit();
     consoleExit(NULL);

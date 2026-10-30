@@ -32,7 +32,6 @@ extern "C" {
 
 // 3. Pool customizado BSD Socket para economizar memoria RAM
 static const SocketInitConfig s_socketInitConfig = {
-    .bsdsocket_version   = 1,
     .tcp_tx_buf_size     = 0x4000, // 16KB TX
     .tcp_rx_buf_size     = 0x4000, // 16KB RX
     .tcp_tx_buf_max_size = 0x8000, // 32KB Max
@@ -52,7 +51,6 @@ static void cleanupServices() {
     pminfoExit();
     pmdmntExit();
     fsdevUnmountAll();
-    fsdevExit();
     fsExit();
     smExit();
 }
@@ -74,20 +72,17 @@ int main(int argc, char* argv[]) {
     rc = fsInitialize();
     if (R_FAILED(rc)) { smExit(); return 1; }
 
-    rc = fsdevInit();
+    rc = pmdmntInitialize();
     if (R_FAILED(rc)) { fsExit(); smExit(); return 1; }
 
-    rc = pmdmntInitialize();
-    if (R_FAILED(rc)) { fsdevExit(); fsExit(); smExit(); return 1; }
-
     rc = pminfoInitialize();
-    if (R_FAILED(rc)) { pmdmntExit(); fsdevExit(); fsExit(); smExit(); return 1; }
+    if (R_FAILED(rc)) { pmdmntExit(); fsExit(); smExit(); return 1; }
 
     rc = nifmInitialize(NifmServiceType_User);
-    if (R_FAILED(rc)) { pminfoExit(); pmdmntExit(); fsdevExit(); fsExit(); smExit(); return 1; }
+    if (R_FAILED(rc)) { pminfoExit(); pmdmntExit(); fsExit(); smExit(); return 1; }
 
     rc = socketInitialize(&s_socketInitConfig);
-    if (R_FAILED(rc)) { nifmExit(); pminfoExit(); pmdmntExit(); fsdevExit(); fsExit(); smExit(); return 1; }
+    if (R_FAILED(rc)) { nifmExit(); pminfoExit(); pmdmntExit(); fsExit(); smExit(); return 1; }
 
     // Garante que a estrutura de pastas no SD exista
     Config::ensureDirectories();
