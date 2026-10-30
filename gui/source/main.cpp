@@ -41,7 +41,7 @@ bool isSysmoduleRunning(u64& outPid) {
 bool startSysmodule() {
     NcmProgramLocation loc = {};
     loc.program_id = Config::SYSMODULE_TITLE_ID;
-    loc.storage_id = NcmStorageId_None;
+    loc.storageID  = NcmStorageId_None;
 
     u64 pid = 0;
     Result rc = pmshellLaunchProgram(0, &loc, &pid);
