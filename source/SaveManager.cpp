@@ -65,7 +65,7 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
         if (R_FAILED(rc) || totalRead == 0) break;
 
         for (s64 i = 0; i < totalRead; i++) {
-            if (infoBuf[i].title_id == titleId &&
+            if (infoBuf[i].application_id == titleId &&
                 infoBuf[i].save_data_type == FsSaveDataType_Account &&
                 memcmp(&infoBuf[i].uid, &uid, sizeof(AccountUid)) == 0) {
                 saveExists = true;
@@ -133,7 +133,7 @@ void SaveManager::loadState() {
 
     char line[128];
     while (fgets(line, sizeof(line), f)) {
-        u64 tid = 0;
+        unsigned long long tid = 0;
         u32 crc = 0;
         if (sscanf(line, "%llx:%x", &tid, &crc) == 2) {
             m_savedCrcs[tid] = crc;
