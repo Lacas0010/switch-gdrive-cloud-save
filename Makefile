@@ -29,7 +29,8 @@ ASFLAGS         := -g $(ARCH)
 # Bibliotecas essenciais para networking e compactacao em sysmodule
 LIBS            := -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lnx
 
-LIBDIRS         := $(PORTLIBS_PATH) $(LIBNX)
+PORTLIBS        ?= $(DEVKITPRO)/portlibs/switch
+LIBDIRS         := $(PORTLIBS) $(LIBNX)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 

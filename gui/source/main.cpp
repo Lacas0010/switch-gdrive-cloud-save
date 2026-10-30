@@ -198,11 +198,11 @@ int main(int argc, char* argv[]) {
         }
 
         // Navegacao
-        if (kDown & (HidNpadButton_AnyUp | HidNpadButton_Up)) {
+        if (kDown & (HidNpadButton_Up | HidNpadButton_StickLUp)) {
             selectedItem--;
             if (selectedItem < 0) selectedItem = TOTAL_MENU_ITEMS - 1;
         }
-        if (kDown & (HidNpadButton_AnyDown | HidNpadButton_Down)) {
+        if (kDown & (HidNpadButton_Down | HidNpadButton_StickLDown)) {
             selectedItem++;
             if (selectedItem >= TOTAL_MENU_ITEMS) selectedItem = 0;
         }

@@ -1,6 +1,7 @@
 #include "ZipHelper.hpp"
 #include <cstdio>
 #include <cstring>
+#include <cstddef>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <zlib.h>
