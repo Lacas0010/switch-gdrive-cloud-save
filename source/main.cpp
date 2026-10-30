@@ -72,7 +72,6 @@ int main(int argc, char* argv[]) {
     rc = fsInitialize();
     if (R_FAILED(rc)) { smExit(); return 1; }
 
-    // Registra montagem do cartao SD no devoptab para funcoes de arquivo padrao (fopen, stat, etc)
     rc = fsdevMountSdmc();
     if (R_FAILED(rc)) { fsExit(); smExit(); return 1; }
 
@@ -102,48 +101,50 @@ int main(int argc, char* argv[]) {
         // 1. Gerenciamento de Autenticacao OAuth 2.0 (Device Flow)
         if (!gdrive.isAuthorized()) {
             gdrive.loadConfig();
+        }
 
-            if (!gdrive.isAuthorized() && isInternetConnected()) {
+        if (gdrive.isConfigured() && !gdrive.isAuthorized()) {
+            if (isInternetConnected()) {
                 if (!deviceCodeRequested) {
                     if (gdrive.requestDeviceCode()) {
                         deviceCodeRequested = true;
                     }
                 } else {
+                    // Tenta polling para verificar se o usuario digitou o codigo no celular/PC
                     if (gdrive.pollAuthorization()) {
                         deviceCodeRequested = false;
-                        gdrive.saveConfig();
                     }
                 }
             }
         }
 
-        // 2. Monitoramento de Jogos
-        if (monitor.scanProcesses()) {
-            u64 closedTitleId = monitor.getRecentlyClosedTitle();
-            if (closedTitleId != 0) {
-                // Checa alteracoes no save do jogo encerrado
-                if (saveManager.hasSaveChanged(closedTitleId)) {
-                    std::string zipPath = Config::TEMP_DIR + "/save_" + std::to_string(closedTitleId) + ".zip";
+        // 2. Monitoramento de Jogos e Backup de Saves
+        u64 closedTitleId = 0;
+        if (monitor.hasGameJustExited(closedTitleId)) {
+            // Um jogo foi fechado. Verifica se ha conta de usuario ativa
+            AccountUid uid{};
+            if (saveManager.getActiveAccount(uid)) {
+                std::string zipPath;
+                bool changed = false;
 
-                    // Compacta os dados salvos em stream
-                    if (ZipHelper::compressSaveData(closedTitleId, zipPath)) {
-                        // Envia para o Google Drive se estiver conectado e autorizado
-                        if (isInternetConnected() && gdrive.isAuthorized()) {
-                            std::string filename = "save_" + std::to_string(closedTitleId) + ".zip";
-                            if (gdrive.uploadSaveFile(zipPath, filename)) {
-                                saveManager.updateCommittedHash(closedTitleId);
-                            }
+                // Processa e compacta o save
+                if (saveManager.processGameSave(closedTitleId, uid, zipPath, changed)) {
+                    if (changed && isInternetConnected() && gdrive.isAuthorized()) {
+                        // Calcula CRC para persistir apos o upload
+                        u32 newCrc = 0;
+                        ZipHelper::calculateFileCrc32(zipPath, newCrc);
+
+                        // Envia para o Google Drive
+                        if (gdrive.uploadSaveArchive(closedTitleId, zipPath)) {
+                            saveManager.markSaveUploaded(closedTitleId, newCrc);
                         }
                     }
-
-                    // Remove arquivo temporario
-                    unlink(zipPath.c_str());
                 }
             }
         }
 
-        // Intervalo de ciclo em background: 5 segundos
-        svcSleepThread(5'000'000'000ULL);
+        // Libera CPU dormindo por 3 segundos
+        svcSleepThread(3'000'000'000ULL);
     }
 
     cleanupServices();
