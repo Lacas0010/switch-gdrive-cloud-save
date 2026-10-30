@@ -12,6 +12,11 @@ bool ProcessMonitor::isGameRunning(u64& outRunningTitleId) {
     if (R_SUCCEEDED(rc) && pid != 0) {
         u64 titleId = 0;
         if (R_SUCCEEDED(pminfoGetProgramId(&titleId, pid))) {
+            // Se o jogo estiver executando como patch/update (bit 11 / 0x800 setado),
+            // normaliza para o Base Application ID para que o container de save seja encontrado.
+            if ((titleId & 0x800ULL) != 0) {
+                titleId &= ~0x800ULL;
+            }
             outRunningTitleId = titleId;
             return true;
         }

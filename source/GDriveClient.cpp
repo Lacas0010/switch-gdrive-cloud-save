@@ -572,6 +572,7 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, ("Authorization: Bearer " + m_accessToken).c_str());
     headers = curl_slist_append(headers, ("Content-Type: multipart/related; boundary=" + boundary).c_str());
+    headers = curl_slist_append(headers, "Expect:"); // Evita travamento de espera '100-continue' em uploads maiores
 
     std::string uploadUrl;
     if (isUpdate) {
@@ -592,7 +593,10 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_CAINFO, Config::getCaBundlePath().c_str());
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 180L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 600L); // 10 minutos para suportar saves de qualquer tamanho
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L); // Se cair para < 1KB/s
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);    // por mais de 45 segundos, aborta
 
     CURLcode res = curl_easy_perform(curl);
 

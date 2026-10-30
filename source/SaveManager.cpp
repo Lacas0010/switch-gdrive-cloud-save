@@ -14,35 +14,39 @@ SaveManager::~SaveManager() {
 }
 
 bool SaveManager::getActiveAccount(AccountUid& outUid) {
-    Result rc = accountInitialize(AccountServiceType_System);
+    // 1. Tenta AccountServiceType_Application (acc:u0) que eh o padrao mais confiavel para ler perfis
+    Result rc = accountInitialize(AccountServiceType_Application);
     if (R_FAILED(rc)) {
-        // Fallback para User caso System falhe
-        rc = accountInitialize(AccountServiceType_Administrator);
-        if (R_FAILED(rc)) return false;
+        // Fallback para System (acc:u1) ou Administrator (acc:su)
+        rc = accountInitialize(AccountServiceType_System);
+        if (R_FAILED(rc)) {
+            rc = accountInitialize(AccountServiceType_Administrator);
+            if (R_FAILED(rc)) return false;
+        }
     }
 
     AccountUid uid{};
     rc = accountGetLastOpenedUser(&uid);
-    accountExit();
-
     if (R_SUCCEEDED(rc) && accountUidIsValid(&uid)) {
         outUid = uid;
+        accountExit();
         return true;
     }
 
-    // Se nao houver ultimo aberto, tenta listar o primeiro usuario disponivel
-    rc = accountInitialize(AccountServiceType_Administrator);
-    if (R_SUCCEEDED(rc)) {
-        s32 userCount = 0;
-        AccountUid uids[8];
-        if (R_SUCCEEDED(accountListAllUsers(uids, 8, &userCount)) && userCount > 0) {
-            outUid = uids[0];
-            accountExit();
-            return true;
+    // Se nao houver ultimo aberto ou retorno invalido, lista todos os usuarios registrados
+    s32 userCount = 0;
+    AccountUid uids[8];
+    if (R_SUCCEEDED(accountListAllUsers(uids, 8, &userCount)) && userCount > 0) {
+        for (s32 i = 0; i < userCount; ++i) {
+            if (accountUidIsValid(&uids[i])) {
+                outUid = uids[i];
+                accountExit();
+                return true;
+            }
         }
-        accountExit();
     }
 
+    accountExit();
     return false;
 }
 
@@ -143,6 +147,9 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
 bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged) {
     outChanged = false;
 
+    // Se o titleId fornecido contiver a flag de update/patch (bit 11), normaliza para a base
+    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
+
     // 1. Abre leitor de informacoes de saves para garantir que o save existe
     FsSaveDataInfoReader reader;
     Result rc = fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User);
@@ -153,16 +160,21 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
     bool saveExists = false;
     s64 totalRead = 0;
     FsSaveDataInfo infoBuf[16];
+    u64 targetTitleId = baseTitleId;
 
     while (true) {
         rc = fsSaveDataInfoReaderRead(&reader, infoBuf, 16, &totalRead);
         if (R_FAILED(rc) || totalRead == 0) break;
 
         for (s64 i = 0; i < totalRead; i++) {
-            if (infoBuf[i].application_id == titleId &&
+            u64 appTid = infoBuf[i].application_id;
+            u64 appBaseTid = ((appTid & 0x800ULL) != 0) ? (appTid & ~0x800ULL) : appTid;
+
+            if ((appTid == titleId || appBaseTid == baseTitleId) &&
                 infoBuf[i].save_data_type == FsSaveDataType_Account &&
                 memcmp(&infoBuf[i].uid, &uid, sizeof(AccountUid)) == 0) {
                 saveExists = true;
+                targetTitleId = appTid;
                 break;
             }
         }
@@ -175,14 +187,18 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
     }
 
     // 2. Monta o save no caminho "save:/"
-    rc = fsdevMountSaveData("save", titleId, uid);
+    rc = fsdevMountSaveDataReadOnly("save", targetTitleId, uid);
     if (R_FAILED(rc)) {
-        return false;
+        // Fallback para read-write caso read-only falhe
+        rc = fsdevMountSaveData("save", targetTitleId, uid);
+        if (R_FAILED(rc)) {
+            return false;
+        }
     }
 
     // Formata nome do arquivo de destino
     char filename[128];
-    snprintf(filename, sizeof(filename), "%s/save_%016llx.zip", Config::TEMP_DIR.c_str(), (unsigned long long)titleId);
+    snprintf(filename, sizeof(filename), "%s/save_%016llx.zip", Config::TEMP_DIR.c_str(), (unsigned long long)baseTitleId);
     outZipPath = filename;
 
     // 3. Compacta o diretorio montado "save:/" diretamente para o SD
@@ -199,7 +215,7 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
     // 5. Calcula o CRC32 do .zip gerado para checar alteracao
     u32 currentCrc = 0;
     if (ZipHelper::calculateFileCrc32(outZipPath, currentCrc)) {
-        auto it = m_savedCrcs.find(titleId);
+        auto it = m_savedCrcs.find(baseTitleId);
         if (it == m_savedCrcs.end() || it->second != currentCrc) {
             // Houve alteracao nos dados!
             outChanged = true;
