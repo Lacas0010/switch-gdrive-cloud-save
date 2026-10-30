@@ -46,7 +46,7 @@ export DEPSDIR  := $(CURDIR)/$(BUILD)
 # Filtra apenas main.cpp da GUI e GDriveClient.cpp do core
 CPPFILES        := source/main.cpp ../source/GDriveClient.cpp
 
-export OFILES   := $(addprefix $(BUILD)/,$(notdir $(CPPFILES:.cpp=.o)))
+export OFILES   := $(notdir $(CPPFILES:.cpp=.o))
 
 export INCLUDE  := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                    $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -92,11 +92,11 @@ $(OUTPUT).elf: $(OFILES)
 	@echo "Ligando $(notdir $@)..."
 	@$(CXX) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
 
-$(BUILD)/main.o: $(TOPDIR)/source/main.cpp
+main.o: $(TOPDIR)/source/main.cpp
 	@echo "Compilando $(notdir $<)..."
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
-$(BUILD)/GDriveClient.o: $(TOPDIR)/../source/GDriveClient.cpp
+GDriveClient.o: $(TOPDIR)/../source/GDriveClient.cpp
 	@echo "Compilando $(notdir $<)..."
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
