@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
+#include <dirent.h>
+#include <vector>
 #include "Config.hpp"
 #include "ProcessMonitor.hpp"
 #include "SaveManager.hpp"
@@ -117,6 +119,36 @@ static bool isInternetConnected() {
     return (R_SUCCEEDED(rc) && connStatus == NifmInternetConnectionStatus_Connected);
 }
 
+struct PendingSave {
+    u64 titleId;
+    std::string zipPath;
+    u32 crc;
+};
+static std::vector<PendingSave> s_pendingSaves;
+
+static void recoverPendingSavesFromDisk() {
+    DIR* dir = opendir(Config::TEMP_DIR.c_str());
+    if (!dir) return;
+
+    struct dirent* entry = nullptr;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_REG || entry->d_type == DT_UNKNOWN) {
+            std::string name = entry->d_name;
+            if (name.rfind("save_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 4) == ".zip") {
+                unsigned long long tid = 0;
+                if (sscanf(name.c_str(), "save_%llx.zip", &tid) == 1 && tid != 0) {
+                    std::string fullPath = Config::TEMP_DIR + "/" + name;
+                    u32 crc = 0;
+                    ZipHelper::calculateFileCrc32(fullPath, crc);
+                    s_pendingSaves.push_back({tid, fullPath, crc});
+                    logSysmodule("[RECOVERY] Save pendente recuperado do SD: 0x%016llX (%s)", tid, name.c_str());
+                }
+            }
+        }
+    }
+    closedir(dir);
+}
+
 int main(int argc, char* argv[]) {
     // Garante que a estrutura de pastas no SD exista
     Config::ensureDirectories();
@@ -155,6 +187,9 @@ int main(int argc, char* argv[]) {
 
     bool deviceCodeRequested = false;
 
+    // Recupera eventuais saves que ficaram salvos no SD enquanto o console estava offline
+    recoverPendingSavesFromDisk();
+
     // Loop de monitoramento em segundo plano
     while (s_running) {
         // 1. Gerenciamento de Autenticacao OAuth 2.0 (Device Flow)
@@ -175,6 +210,23 @@ int main(int argc, char* argv[]) {
                         deviceCodeRequested = false;
                         logSysmodule("[AUTH] Autorizacao concluida com sucesso!");
                     }
+                }
+            }
+        }
+
+        // 1.1 Processa fila de saves pendentes (ex: jogos fechados offline ou apos desativar LDN)
+        if (!s_pendingSaves.empty() && isInternetConnected() && gdrive.isAuthorized()) {
+            for (auto it = s_pendingSaves.begin(); it != s_pendingSaves.end(); ) {
+                std::string upErr;
+                if (gdrive.uploadSaveArchive(it->titleId, it->zipPath, &upErr)) {
+                    saveManager.markSaveUploaded(it->titleId, it->crc);
+                    logSysmodule("[SYNC] Save pendente 0x%016llX enviado com sucesso ao Drive!",
+                                 (unsigned long long)it->titleId);
+                    it = s_pendingSaves.erase(it);
+                } else {
+                    logSysmodule("[ERROR] Falha ao enviar save pendente 0x%016llX: %s",
+                                 (unsigned long long)it->titleId, upErr.c_str());
+                    ++it;
                 }
             }
         }
@@ -201,24 +253,36 @@ int main(int argc, char* argv[]) {
                         logSysmodule("[ERROR] Falha ao ler ou compactar save de 0x%016llX", (unsigned long long)closedTitleId);
                     } else if (!changed) {
                         logSysmodule("[INFO] Save 0x%016llX inalterado (mesmo CRC), upload dispensado.", (unsigned long long)closedTitleId);
-                    } else if (!isInternetConnected()) {
-                        logSysmodule("[WARN] Sem conexao com a internet ao fechar 0x%016llX. Upload adiado.", (unsigned long long)closedTitleId);
-                    } else if (!gdrive.isAuthorized()) {
-                        logSysmodule("[WARN] Google Drive nao autorizado ao fechar 0x%016llX.", (unsigned long long)closedTitleId);
                     } else {
-                        // Calcula CRC para persistir apos o upload
                         u32 newCrc = 0;
                         ZipHelper::calculateFileCrc32(zipPath, newCrc);
 
-                        // Envia para o Google Drive
-                        std::string upErr;
-                        if (gdrive.uploadSaveArchive(closedTitleId, zipPath, &upErr)) {
-                            saveManager.markSaveUploaded(closedTitleId, newCrc);
-                            logSysmodule("[SYNC] Save 0x%016llX enviado ao Google Drive (CRC=0x%08X)",
-                                         (unsigned long long)closedTitleId, newCrc);
+                        // Jogos como Pokemon Sword usam Comunicacao Local (LDN / Y-Comm) que desligam o Wi-Fi e o audio Bluetooth.
+                        // Ao fechar o jogo, o Horizon OS precisa de 3 a 10 segundos para restabelecer a conexao com o roteador.
+                        bool connected = false;
+                        for (int attempt = 0; attempt < 15; ++attempt) {
+                            if (isInternetConnected()) {
+                                connected = true;
+                                break;
+                            }
+                            svcSleepThread(1'000'000'000ULL); // 1 segundo por tentativa
+                        }
+
+                        if (connected && gdrive.isAuthorized()) {
+                            std::string upErr;
+                            if (gdrive.uploadSaveArchive(closedTitleId, zipPath, &upErr)) {
+                                saveManager.markSaveUploaded(closedTitleId, newCrc);
+                                logSysmodule("[SYNC] Save 0x%016llX enviado ao Google Drive (CRC=0x%08X)",
+                                             (unsigned long long)closedTitleId, newCrc);
+                            } else {
+                                logSysmodule("[ERROR] Falha no upload imediato de 0x%016llX: %s. Enfileirando...",
+                                             (unsigned long long)closedTitleId, upErr.c_str());
+                                s_pendingSaves.push_back({closedTitleId, zipPath, newCrc});
+                            }
                         } else {
-                            logSysmodule("[ERROR] Falha ao enviar save 0x%016llX para o Drive: %s",
-                                         (unsigned long long)closedTitleId, upErr.c_str());
+                            logSysmodule("[WARN] Sem Wi-Fi apos fechar 0x%016llX (LDN/offline). Enfileirando para envio posterior...",
+                                         (unsigned long long)closedTitleId);
+                            s_pendingSaves.push_back({closedTitleId, zipPath, newCrc});
                         }
                     }
                 }
