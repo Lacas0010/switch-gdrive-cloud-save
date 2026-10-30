@@ -312,6 +312,94 @@ namespace Gfx {
             }
         }
 
+        // Icone de Nuvem com Seta de Download
+        void drawCloudDownloadIcon(int cx, int cy, int size, u32 color) {
+            int r = size / 4;
+            fillCircle(cx - r, cy, r, color);
+            fillCircle(cx, cy - r / 2, static_cast<int>(r * 1.3f), color);
+            fillCircle(cx + r, cy, r, color);
+            fillRect(cx - r, cy, r * 2, r, color);
+
+            u32 arrowColor = Colors::TEXT_DARK;
+            int arrowH = size / 3;
+            int topY = cy - arrowH / 3;
+            int tipY = topY + arrowH;
+            fillRect(cx - 2, topY, 4, arrowH - 4, arrowColor);
+            // Ponta da seta apontando para baixo
+            for (int i = 0; i < 6; i++) {
+                fillRect(cx - (5 - i), tipY - 5 + i, (5 - i) * 2 + 1, 1, arrowColor);
+            }
+        }
+
+        // Icone de Power / Execucao
+        void drawPowerIcon(int cx, int cy, int size, u32 color) {
+            int r = size / 2;
+            int rIn = r - 3;
+            for (float a = 0.8f; a <= 5.48f; a += 0.05f) {
+                for (int cr = rIn; cr <= r; cr++) {
+                    int px = cx + static_cast<int>(std::cos(a) * cr);
+                    int py = cy + static_cast<int>(std::sin(a) * cr);
+                    drawPixel(px, py, color);
+                }
+            }
+            fillRect(cx - 1, cy - r, 3, r + 1, color);
+        }
+
+        // Icone de Bandeira (Boot Flag)
+        void drawFlagIcon(int cx, int cy, int size, u32 color) {
+            int h = size;
+            int w = size * 3 / 4;
+            int x = cx - w / 2;
+            int y = cy - h / 2;
+            fillRect(x, y, 2, h, Colors::TEXT_MUTED);
+            for (int dy = 0; dy < h / 2; dy++) {
+                int fw = std::max(2, (w - 2) - dy / 2);
+                fillRect(x + 2, y + dy, fw, 1, color);
+            }
+        }
+
+        // Icone de Gamepad / Jogos
+        void drawGamepadIcon(int cx, int cy, int size, u32 color) {
+            int w = size;
+            int h = size * 2 / 3;
+            int x = cx - w / 2;
+            int y = cy - h / 2;
+            fillRoundedRect(x, y, w, h, 6, color);
+            // D-Pad esquerda
+            int dX = x + 7, dY = cy - 2;
+            fillRect(dX - 3, dY, 7, 3, Colors::TEXT_DARK);
+            fillRect(dX - 1, dY - 2, 3, 7, Colors::TEXT_DARK);
+            // Botoes direita
+            int bX = x + w - 8, bY = cy - 1;
+            fillCircle(bX, bY - 3, 1, Colors::JOYCON_YELLOW);
+            fillCircle(bX, bY + 3, 1, Colors::STATUS_GREEN);
+            fillCircle(bX - 3, bY, 1, Colors::JOYCON_BLUE);
+            fillCircle(bX + 3, bY, 1, Colors::JOYCON_RED);
+        }
+
+        // Icone de Chave (API Key / Client ID)
+        void drawKeyIcon(int cx, int cy, int size, u32 color) {
+            int r = size / 3;
+            int ringX = cx - size / 4;
+            int ringY = cy;
+            fillCircle(ringX, ringY, r, color);
+            fillCircle(ringX, ringY, r / 2, Colors::CARD_BG);
+            int stemW = size / 2;
+            fillRect(ringX + r - 1, cy - 2, stemW, 4, color);
+            fillRect(ringX + r + stemW - 4, cy + 2, 3, 4, color);
+            fillRect(ringX + r + stemW - 10, cy + 2, 3, 3, color);
+        }
+
+        // Icone de Edicao / Lapis
+        void drawEditIcon(int cx, int cy, int size, u32 color) {
+            int half = size / 2;
+            for (int d = -half + 3; d <= half - 3; d++) {
+                fillRect(cx + d - 1, cy - d - 1, 3, 3, color);
+            }
+            drawPixel(cx - half + 1, cy + half - 1, Colors::JOYCON_YELLOW);
+            drawPixel(cx + half - 1, cy - half + 1, Colors::JOYCON_RED);
+        }
+
         // Icone de Sinal Wi-Fi
         void drawWifiIcon(int cx, int cy, int size, u32 color) {
             // Ponto base

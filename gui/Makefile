@@ -18,7 +18,7 @@ INCLUDES        := include source ../source
 
 APP_TITLE       := Google Drive Sync
 APP_AUTHOR      := Antigravity Dev
-APP_VERSION     := 0.0.3
+APP_VERSION     := 0.0.4
 
 ARCH            := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 

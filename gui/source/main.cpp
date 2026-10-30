@@ -895,7 +895,9 @@ int main(int argc, char* argv[]) {
     SaveManager saveManager;
 
     int selectedItem = 0;
+    int menuScrollOffset = 0;
     constexpr int TOTAL_MENU_ITEMS = 10;
+    constexpr int MENU_ITEMS_PER_VIEW = 6;
     std::string toastMessage = "Pronto! Selecione uma opcao para iniciar.";
     u32 toastColor = Gfx::Colors::STATUS_GREEN;
 
@@ -916,15 +918,29 @@ int main(int argc, char* argv[]) {
             break;
         }
 
-        // Navegação
+        // Navegação com scroll automático
         if (kDown & (HidNpadButton_Up | HidNpadButton_StickLUp)) {
             selectedItem--;
-            if (selectedItem < 0) selectedItem = TOTAL_MENU_ITEMS - 1;
+            if (selectedItem < 0) {
+                selectedItem = TOTAL_MENU_ITEMS - 1;
+                menuScrollOffset = TOTAL_MENU_ITEMS - MENU_ITEMS_PER_VIEW;
+            }
         }
         if (kDown & (HidNpadButton_Down | HidNpadButton_StickLDown)) {
             selectedItem++;
-            if (selectedItem >= TOTAL_MENU_ITEMS) selectedItem = 0;
+            if (selectedItem >= TOTAL_MENU_ITEMS) {
+                selectedItem = 0;
+                menuScrollOffset = 0;
+            }
         }
+
+        // Ajuste do scroll offset para manter o item selecionado visível
+        if (selectedItem < menuScrollOffset) {
+            menuScrollOffset = selectedItem;
+        } else if (selectedItem >= menuScrollOffset + MENU_ITEMS_PER_VIEW) {
+            menuScrollOffset = selectedItem - MENU_ITEMS_PER_VIEW + 1;
+        }
+        menuScrollOffset = std::clamp(menuScrollOffset, 0, TOTAL_MENU_ITEMS - MENU_ITEMS_PER_VIEW);
 
         // Atualização periódica de status (a cada 1 segundo)
         u64 now = armTicksToNs(armGetSystemTick());
@@ -1148,7 +1164,7 @@ int main(int argc, char* argv[]) {
 
             // Título e Versão
             display.drawText(42, 16, "GOOGLE DRIVE CLOUD SAVE", Gfx::Colors::TEXT_WHITE, 2, true);
-            display.drawText(44, 46, "Atmosphere CFW  •  Suite de Sincronizacao v0.0.3", Gfx::Colors::TEXT_MUTED, 1);
+            display.drawText(44, 46, "Atmosphere CFW  •  Suite de Sincronizacao v0.0.4", Gfx::Colors::TEXT_MUTED, 1);
 
             // Badges de Status no Header (Direita)
             // Wi-Fi
@@ -1241,51 +1257,139 @@ int main(int argc, char* argv[]) {
 
             display.drawText(rightColX + 24, menuBoxY + 12, "ACOES E CONFIGURACOES", Gfx::Colors::TEXT_MUTED, 1, true);
 
+            // Indicador de paginação no cabeçalho
+            char pageHint[32];
+            snprintf(pageHint, sizeof(pageHint), "%d de %d", selectedItem + 1, TOTAL_MENU_ITEMS);
+            display.drawText(rightColX + rightColW - 100, menuBoxY + 12, pageHint, Gfx::Colors::JOYCON_CYAN, 1);
+
+            enum IconKind {
+                ICON_GOOGLE,
+                ICON_POWER,
+                ICON_FLAG,
+                ICON_UPLOAD,
+                ICON_DOWNLOAD,
+                ICON_GAMEPAD,
+                ICON_FOLDER,
+                ICON_KEY,
+                ICON_LOCK,
+                ICON_EDIT
+            };
+
             struct MenuItem {
+                IconKind icon;
                 const char* title;
                 const char* desc;
+                u32 accentColor;
             };
 
             const MenuItem menuItems[TOTAL_MENU_ITEMS] = {
-                {"Vincular Conta Google (Device Flow na Tela)", "Exibe o codigo de confirmacao para ativar no celular ou PC"},
-                {"Iniciar / Parar Sysmodule em Segundo Plano", "Alterna o processo daemon de monitoramento de saves"},
-                {"Alternar Inicializacao no Boot (boot2.flag)",  "Inicia automaticamente o daemon toda vez que ligar o Switch"},
-                {"Subir Todos os Saves Agora (Upload em Lote)",  "Compacta e envia todos os saves do usuario ativo para o Drive"},
-                {"Atualizar do Drive (Baixar se Nuvem for Mais Recente)", "Verifica e baixa saves da nuvem estritamente mais recentes"},
-                {"Selecionar Jogos para Sincronizar",          "Lista os jogos para marcar quais enviar ou salvar como padrao"},
-                {"Validar / Criar Pasta de Saves no Google Drive", "Testa a conexao com a API e assegura a pasta destino"},
-                {"Configurar Google OAuth Client ID",           "Insira a chave Client ID usando o teclado virtual Horizon"},
-                {"Configurar Google OAuth Client Secret",       "Insira o Client Secret usando o teclado virtual Horizon"},
-                {"Alterar Nome da Pasta de Destino no Drive",    "Altere o nome da pasta principal de backup no Drive"}
+                {ICON_GOOGLE,   "Vincular Conta Google (Device Flow na Tela)", "Exibe o codigo de confirmacao para ativar no celular ou PC", Gfx::Colors::DRIVE_YELLOW},
+                {ICON_POWER,    "Iniciar / Parar Sysmodule em Segundo Plano", "Alterna o processo daemon de monitoramento de saves",          sysmoduleActive ? Gfx::Colors::STATUS_GREEN : Gfx::Colors::STATUS_RED},
+                {ICON_FLAG,     "Alternar Inicializacao no Boot (boot2.flag)",  "Inicia automaticamente o daemon toda vez que ligar o Switch", bootFlagActive ? Gfx::Colors::STATUS_GREEN : Gfx::Colors::TEXT_MUTED},
+                {ICON_UPLOAD,   "Subir Todos os Saves Agora (Upload em Lote)",  "Compacta e envia todos os saves do usuario ativo para o Drive", Gfx::Colors::JOYCON_CYAN},
+                {ICON_DOWNLOAD, "Atualizar do Drive (Baixar se Mais Recente)", "Verifica e restaura saves da nuvem estritamente mais recentes", Gfx::Colors::STATUS_GREEN},
+                {ICON_GAMEPAD,  "Selecionar Jogos para Sincronizar",          "Lista os jogos para marcar quais enviar ou salvar como padrao", Gfx::Colors::JOYCON_BLUE},
+                {ICON_FOLDER,   "Validar / Criar Pasta de Saves no Drive",     "Testa a conexao com a API e assegura a pasta destino",          Gfx::Colors::DRIVE_GREEN},
+                {ICON_KEY,      "Configurar Google OAuth Client ID",           "Insira a chave Client ID usando o teclado virtual Horizon",     Gfx::Colors::JOYCON_YELLOW},
+                {ICON_LOCK,     "Configurar Google OAuth Client Secret",       "Insira o Client Secret usando o teclado virtual Horizon",       Gfx::Colors::JOYCON_RED},
+                {ICON_EDIT,     "Alterar Nome da Pasta de Destino no Drive",    "Altere o nome da pasta principal de backup no Drive",           Gfx::Colors::JOYCON_CYAN}
             };
 
-            int itemY = menuBoxY + 30;
-            int itemH = 43;
+            int startY = menuBoxY + 38;
+            int itemH = 62;
+            int itemGap = 7;
+            int cardX = rightColX + 16;
+            int cardW = rightColW - 46; // Espaço reservado para o scrollbar
 
-            for (int i = 0; i < TOTAL_MENU_ITEMS; i++) {
+            for (int v = 0; v < MENU_ITEMS_PER_VIEW; v++) {
+                int i = menuScrollOffset + v;
+                if (i >= TOTAL_MENU_ITEMS) break;
+
                 bool isSelected = (i == selectedItem);
-                int cardX = rightColX + 16;
-                int cardW = rightColW - 32;
+                int itemY = startY + v * (itemH + itemGap);
+                const auto& item = menuItems[i];
 
                 if (isSelected) {
-                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_HOVER_BG);
-                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_HOVER_OUT, 2);
+                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_HOVER_BG);
+                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_HOVER_OUT, 2);
 
-                    // Indicador de seleção
-                    display.fillRoundedRect(cardX + 4, itemY + 5, 4, itemH - 10, 2, Gfx::Colors::JOYCON_CYAN);
+                    // Indicador vertical Joy-Con à esquerda
+                    display.fillRoundedRect(cardX + 4, itemY + 8, 4, itemH - 16, 2, Gfx::Colors::JOYCON_CYAN);
 
-                    // Título e Descrição
-                    display.drawText(cardX + 20, itemY + 6, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1, true);
-                    display.drawText(cardX + 20, itemY + 23, menuItems[i].desc, Gfx::Colors::JOYCON_CYAN, 1);
+                    // Seta de navegação à direita
+                    display.drawText(cardX + cardW - 24, itemY + 22, ">", Gfx::Colors::JOYCON_CYAN, 1, true);
                 } else {
-                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_BG);
-                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_OUTLINE, 1);
-
-                    display.drawText(cardX + 20, itemY + 6, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1);
-                    display.drawText(cardX + 20, itemY + 23, menuItems[i].desc, Gfx::Colors::TEXT_MUTED, 1);
+                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_BG);
+                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_OUTLINE, 1);
                 }
 
-                itemY += itemH + 5;
+                // Círculo com Ícone Procedural
+                int iconCircleX = cardX + 34;
+                int iconCircleY = itemY + itemH / 2;
+                int iconRadius = 18;
+
+                display.fillCircle(iconCircleX, iconCircleY, iconRadius, isSelected ? Gfx::Colors::HEADER_BG : Gfx::Colors::CARD_BG);
+                display.drawRoundedRectOutline(iconCircleX - iconRadius, iconCircleY - iconRadius, iconRadius * 2, iconRadius * 2, iconRadius, item.accentColor, 1);
+
+                switch (item.icon) {
+                    case ICON_GOOGLE:
+                        display.drawGoogleDriveIcon(iconCircleX, iconCircleY, 20);
+                        break;
+                    case ICON_POWER:
+                        display.drawPowerIcon(iconCircleX, iconCircleY, 18, item.accentColor);
+                        break;
+                    case ICON_FLAG:
+                        display.drawFlagIcon(iconCircleX, iconCircleY, 18, item.accentColor);
+                        break;
+                    case ICON_UPLOAD:
+                        display.drawCloudSaveIcon(iconCircleX, iconCircleY, 20, item.accentColor);
+                        break;
+                    case ICON_DOWNLOAD:
+                        display.drawCloudDownloadIcon(iconCircleX, iconCircleY, 20, item.accentColor);
+                        break;
+                    case ICON_GAMEPAD:
+                        display.drawGamepadIcon(iconCircleX, iconCircleY, 20, item.accentColor);
+                        break;
+                    case ICON_FOLDER:
+                        display.drawFolderIcon(iconCircleX - 10, iconCircleY - 7, 20, 14, item.accentColor);
+                        break;
+                    case ICON_KEY:
+                        display.drawKeyIcon(iconCircleX, iconCircleY, 18, item.accentColor);
+                        break;
+                    case ICON_LOCK:
+                        display.drawLockIcon(iconCircleX, iconCircleY, 18, item.accentColor);
+                        break;
+                    case ICON_EDIT:
+                        display.drawEditIcon(iconCircleX, iconCircleY, 18, item.accentColor);
+                        break;
+                }
+
+                // Título e Descrição
+                int textX = cardX + 66;
+                display.drawText(textX, itemY + 12, item.title, Gfx::Colors::TEXT_WHITE, 1, true);
+                display.drawText(textX, itemY + 36, item.desc, isSelected ? Gfx::Colors::JOYCON_CYAN : Gfx::Colors::TEXT_MUTED, 1);
+            }
+
+            // Barra de Scroll Lateral
+            int scrollTrackX = rightColX + rightColW - 18;
+            int scrollTrackY = startY;
+            int scrollTrackH = MENU_ITEMS_PER_VIEW * (itemH + itemGap) - itemGap;
+
+            display.fillRoundedRect(scrollTrackX, scrollTrackY, 6, scrollTrackH, 3, Gfx::Colors::CARD_OUTLINE);
+
+            float viewRatio = static_cast<float>(MENU_ITEMS_PER_VIEW) / TOTAL_MENU_ITEMS;
+            int thumbH = std::max(24, static_cast<int>(scrollTrackH * viewRatio));
+            float scrollRatio = static_cast<float>(menuScrollOffset) / (TOTAL_MENU_ITEMS - MENU_ITEMS_PER_VIEW);
+            int thumbY = scrollTrackY + static_cast<int>((scrollTrackH - thumbH) * scrollRatio);
+
+            display.fillRoundedRect(scrollTrackX, thumbY, 6, thumbH, 3, Gfx::Colors::JOYCON_CYAN);
+
+            // Indicadores de seta acima/abaixo do scroll
+            if (menuScrollOffset > 0) {
+                display.drawText(scrollTrackX - 1, scrollTrackY - 14, "^", Gfx::Colors::JOYCON_CYAN, 1);
+            }
+            if (menuScrollOffset + MENU_ITEMS_PER_VIEW < TOTAL_MENU_ITEMS) {
+                display.drawText(scrollTrackX - 1, scrollTrackY + scrollTrackH + 2, "v", Gfx::Colors::JOYCON_CYAN, 1);
             }
 
             // Barra de Notificação / Toast no fundo da coluna direita
