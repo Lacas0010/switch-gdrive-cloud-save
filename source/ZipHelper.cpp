@@ -167,25 +167,32 @@ bool ZipHelper::zipDirectory(const std::string& sourceDir, const std::string& ou
 
         // Comprime com zlib em blocos
         z_stream strm{};
-        deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+        if (deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+            fclose(inFile);
+            continue;
+        }
 
-        int flush = Z_NO_FLUSH;
-        do {
-            strm.avail_in = fread(inBuffer.data(), 1, STREAM_BUFFER_SIZE, inFile);
-            flush = feof(inFile) ? Z_FINISH : Z_NO_FLUSH;
+        while (true) {
+            size_t bytesRead = fread(inBuffer.data(), 1, STREAM_BUFFER_SIZE, inFile);
+            strm.avail_in = bytesRead;
             strm.next_in = inBuffer.data();
+            int flush = (bytesRead < STREAM_BUFFER_SIZE) ? Z_FINISH : Z_NO_FLUSH;
 
+            int ret = Z_OK;
             do {
                 strm.avail_out = STREAM_BUFFER_SIZE;
                 strm.next_out = outBuffer.data();
-                deflate(&strm, flush);
+                ret = deflate(&strm, flush);
                 size_t have = STREAM_BUFFER_SIZE - strm.avail_out;
                 if (have > 0) {
                     fwrite(outBuffer.data(), 1, have, outZip);
                 }
-            } while (strm.avail_out == 0);
+            } while (strm.avail_out == 0 && ret != Z_STREAM_END);
 
-        } while (flush != Z_FINISH);
+            if (flush == Z_FINISH || ret == Z_STREAM_END) {
+                break;
+            }
+        }
 
         deflateEnd(&strm);
         fclose(inFile);

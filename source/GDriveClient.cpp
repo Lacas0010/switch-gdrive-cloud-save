@@ -668,7 +668,6 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     fclose(uploadFp);
 
     remove(payloadPath.c_str());
-    remove(zipPath.c_str());
 
     if (res != CURLE_OK) {
         std::string errStr = curl_easy_strerror(res);
@@ -685,6 +684,9 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
         logClient("[UPLOAD] Google Drive retornou erro %ld: %s", httpCode, response.c_str());
         return false;
     }
+
+    // Remove o zip temporario apenas apos confirmacao de sucesso HTTP 2xx
+    remove(zipPath.c_str());
 
     logClient("[UPLOAD] Upload concluido com sucesso para titleId 0x%016llX (%s)",
               (unsigned long long)titleId, isUpdate ? "PATCH" : "POST");

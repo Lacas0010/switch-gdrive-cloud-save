@@ -17,8 +17,8 @@ extern "C" {
     u32 __nx_applet_type = AppletType_None;
     u32 __nx_fs_num_sessions = 1;
 
-    // 2. Heap estatico de 2MB no .bss (padrao canonico para sysmodules do Atmosphere)
-    #define INNER_HEAP_SIZE 0x200000 // 2 MiB
+    // 2. Heap estatico de 4MB no .bss (padrao canonico para sysmodules do Atmosphere)
+    #define INNER_HEAP_SIZE 0x400000 // 4 MiB
 
     void __libnx_initheap(void) {
         static u8 inner_heap[INNER_HEAP_SIZE];
@@ -244,6 +244,9 @@ int main(int argc, char* argv[]) {
         if (s_pmdmntReady && s_pminfoReady && monitor.hasGameJustExited(closedTitleId)) {
             logSysmodule("[EVENT] Jogo fechado detectado: 0x%016llX", (unsigned long long)closedTitleId);
 
+            // Aguarda 500ms para que o Horizon OS desmonte o processo e libere travas de arquivos de save
+            svcSleepThread(500'000'000ULL);
+
             // Verifica se o jogo esta autorizado no modo whitelist
             if (!gdrive.isTitleTracked(closedTitleId)) {
                 logSysmodule("[FILTER] Jogo 0x%016llX ignorado pelo modo whitelist.", (unsigned long long)closedTitleId);
@@ -253,6 +256,7 @@ int main(int argc, char* argv[]) {
                 if (!saveManager.getActiveAccount(uid)) {
                     logSysmodule("[ERROR] Nao foi possivel obter usuario ativo para save 0x%016llX", (unsigned long long)closedTitleId);
                 } else {
+                    logSysmodule("[SAVE] Lendo e compactando save de 0x%016llX...", (unsigned long long)closedTitleId);
                     std::string zipPath;
                     bool changed = false;
 
@@ -264,19 +268,23 @@ int main(int argc, char* argv[]) {
                     } else {
                         u32 newCrc = 0;
                         ZipHelper::calculateFileCrc32(zipPath, newCrc);
+                        logSysmodule("[SAVE] Save compactado com sucesso! CRC=0x%08X", newCrc);
 
                         // Jogos como Pokemon Sword usam Comunicacao Local (LDN / Y-Comm) que desligam o Wi-Fi e o audio Bluetooth.
-                        // Ao fechar o jogo, o Horizon OS precisa de 3 a 10 segundos para restabelecer a conexao com o roteador.
+                        // Ao fechar o jogo, o Horizon OS precisa de 15 a 45 segundos para restabelecer a conexao com o roteador.
+                        logSysmodule("[NETWORK] Aguardando reconexao Wi-Fi (timeout 60s)...");
                         bool connected = false;
-                        for (int attempt = 0; attempt < 15; ++attempt) {
+                        for (int attempt = 0; attempt < 60; ++attempt) {
                             if (isInternetConnected()) {
                                 connected = true;
+                                logSysmodule("[NETWORK] Wi-Fi reconectado apos %d segundos!", attempt);
                                 break;
                             }
-                            svcSleepThread(1'000'000'000ULL); // 1 segundo por tentativa
+                            svcSleepThread(1'000'000'000ULL); // 1 segundo por tentativa (total 60s / 1 minuto)
                         }
 
                         if (connected && gdrive.isAuthorized()) {
+                            logSysmodule("[UPLOAD] Iniciando upload de 0x%016llX ao Google Drive...", (unsigned long long)closedTitleId);
                             std::string upErr;
                             if (gdrive.uploadSaveArchive(closedTitleId, zipPath, &upErr)) {
                                 saveManager.markSaveUploaded(closedTitleId, newCrc);
