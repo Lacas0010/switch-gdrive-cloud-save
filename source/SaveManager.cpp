@@ -221,10 +221,7 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
     rc = 0;
     for (int attempt = 1; attempt <= 3; ++attempt) {
         if (isDeviceSave) {
-            rc = fsdevMountDeviceSaveDataReadOnly("save", targetTitleId);
-            if (R_FAILED(rc)) {
-                rc = fsdevMountDeviceSaveData("save", targetTitleId);
-            }
+            rc = fsdevMountDeviceSaveData("save", targetTitleId);
         } else {
             rc = fsdevMountSaveDataReadOnly("save", targetTitleId, targetUid);
             if (R_FAILED(rc)) {
