@@ -183,24 +183,30 @@ int main(int argc, char* argv[]) {
         u64 closedTitleId = 0;
         if (s_pmdmntReady && s_pminfoReady && monitor.hasGameJustExited(closedTitleId)) {
             logSysmodule("[EVENT] Jogo fechado detectado: 0x%016llX", (unsigned long long)closedTitleId);
-            // Um jogo foi fechado. Verifica se ha conta de usuario ativa
-            AccountUid uid{};
-            if (saveManager.getActiveAccount(uid)) {
-                std::string zipPath;
-                bool changed = false;
 
-                // Processa e compacta o save
-                if (saveManager.processGameSave(closedTitleId, uid, zipPath, changed)) {
-                    if (changed && isInternetConnected() && gdrive.isAuthorized()) {
-                        // Calcula CRC para persistir apos o upload
-                        u32 newCrc = 0;
-                        ZipHelper::calculateFileCrc32(zipPath, newCrc);
+            // Verifica se o jogo esta autorizado no modo whitelist
+            if (!gdrive.isTitleTracked(closedTitleId)) {
+                logSysmodule("[FILTER] Jogo 0x%016llX ignorado pelo modo whitelist.", (unsigned long long)closedTitleId);
+            } else {
+                // Um jogo foi fechado. Verifica se ha conta de usuario ativa
+                AccountUid uid{};
+                if (saveManager.getActiveAccount(uid)) {
+                    std::string zipPath;
+                    bool changed = false;
 
-                        // Envia para o Google Drive
-                        if (gdrive.uploadSaveArchive(closedTitleId, zipPath)) {
-                            saveManager.markSaveUploaded(closedTitleId, newCrc);
-                            logSysmodule("[SYNC] Save 0x%016llX enviado ao Google Drive (CRC=0x%08X)",
-                                         (unsigned long long)closedTitleId, newCrc);
+                    // Processa e compacta o save
+                    if (saveManager.processGameSave(closedTitleId, uid, zipPath, changed)) {
+                        if (changed && isInternetConnected() && gdrive.isAuthorized()) {
+                            // Calcula CRC para persistir apos o upload
+                            u32 newCrc = 0;
+                            ZipHelper::calculateFileCrc32(zipPath, newCrc);
+
+                            // Envia para o Google Drive
+                            if (gdrive.uploadSaveArchive(closedTitleId, zipPath)) {
+                                saveManager.markSaveUploaded(closedTitleId, newCrc);
+                                logSysmodule("[SYNC] Save 0x%016llX enviado ao Google Drive (CRC=0x%08X)",
+                                             (unsigned long long)closedTitleId, newCrc);
+                            }
                         }
                     }
                 }

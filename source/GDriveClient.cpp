@@ -62,6 +62,41 @@ namespace {
         return defaultVal;
     }
 
+    std::vector<std::string> extractJsonStringArray(const std::string& json, const std::string& key) {
+        std::vector<std::string> results;
+        std::string pattern = "\"" + key + "\"";
+        size_t keyPos = json.find(pattern);
+        if (keyPos == std::string::npos) return results;
+
+        size_t startBracket = json.find('[', keyPos + pattern.size());
+        if (startBracket == std::string::npos) return results;
+
+        size_t endBracket = json.find(']', startBracket);
+        if (endBracket == std::string::npos) return results;
+
+        std::string inside = json.substr(startBracket + 1, endBracket - startBracket - 1);
+        bool inString = false;
+        std::string current;
+
+        for (size_t i = 0; i < inside.length(); ++i) {
+            char c = inside[i];
+            if (c == '\\' && i + 1 < inside.length()) {
+                current += inside[++i];
+                continue;
+            }
+            if (c == '"') {
+                inString = !inString;
+                if (!inString) {
+                    if (!current.empty()) results.push_back(current);
+                    current.clear();
+                }
+            } else if (inString) {
+                current += c;
+            }
+        }
+        return results;
+    }
+
     std::string extractFirstFileId(const std::string& json) {
         size_t filesPos = json.find("\"files\"");
         if (filesPos == std::string::npos) return "";
@@ -129,6 +164,15 @@ bool GDriveClient::loadConfig() {
         m_folderName = Config::DEFAULT_FOLDER_NAME;
     }
 
+    std::string mode = extractJsonString(content, "sync_mode");
+    if (!mode.empty()) {
+        m_syncMode = mode;
+    } else {
+        m_syncMode = "all";
+    }
+
+    m_trackedTitles = extractJsonStringArray(content, "tracked_titles");
+
     return isConfigured();
 }
 
@@ -142,11 +186,35 @@ bool GDriveClient::saveConfig() {
     fprintf(f, "  \"refresh_token\": \"%s\",\n", m_refreshToken.c_str());
     fprintf(f, "  \"access_token\": \"%s\",\n", m_accessToken.c_str());
     fprintf(f, "  \"folder_id\": \"%s\",\n", m_folderId.c_str());
-    fprintf(f, "  \"folder_name\": \"%s\"\n", m_folderName.c_str());
+    fprintf(f, "  \"folder_name\": \"%s\",\n", m_folderName.c_str());
+    fprintf(f, "  \"sync_mode\": \"%s\",\n", m_syncMode.c_str());
+    fprintf(f, "  \"tracked_titles\": [\n");
+    for (size_t i = 0; i < m_trackedTitles.size(); ++i) {
+        fprintf(f, "    \"%s\"%s\n", m_trackedTitles[i].c_str(), (i + 1 < m_trackedTitles.size()) ? "," : "");
+    }
+    fprintf(f, "  ]\n");
     fprintf(f, "}\n");
     fclose(f);
 
     return true;
+}
+
+bool GDriveClient::isTitleTracked(u64 titleId) const {
+    if (m_syncMode != "whitelist") {
+        return true; // Se for "all", todos os jogos sao rastreados
+    }
+
+    char tidHex[32];
+    snprintf(tidHex, sizeof(tidHex), "%016llx", (unsigned long long)titleId);
+    char tidHexUpper[32];
+    snprintf(tidHexUpper, sizeof(tidHexUpper), "%016llX", (unsigned long long)titleId);
+
+    for (const auto& t : m_trackedTitles) {
+        if (strcasecmp(t.c_str(), tidHex) == 0 || strcasecmp(t.c_str(), tidHexUpper) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string GDriveClient::httpPost(const std::string& url, const std::string& postData, const std::string& authHeader) {

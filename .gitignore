@@ -17,7 +17,7 @@ config.json
 auth_request.txt
 state.json
 *.tmp
-
+DIAGNOSTICO_SYSMODULE.md
 # OS generated files
 .DS_Store
 Thumbs.db

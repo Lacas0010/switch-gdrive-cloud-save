@@ -5,10 +5,13 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <algorithm>
 #include <unistd.h>
 #include "Renderer2D.hpp"
 #include "../../source/Config.hpp"
 #include "../../source/GDriveClient.hpp"
+#include "../../source/SaveManager.hpp"
+#include "../../source/ZipHelper.hpp"
 
 // ==============================================================================
 // TECLADO VIRTUAL NATIVO DO HORIZON OS (swkbd)
@@ -240,11 +243,401 @@ void runHelpModal(Gfx::Display& display, PadState& pad) {
 }
 
 // ==============================================================================
+// MODAL: RESUMO FINAL DE UPLOAD
+// ==============================================================================
+void runSummaryModal(Gfx::Display& display, PadState& pad, int successCount, int failCount, const std::vector<std::string>& failDetails) {
+    while (appletMainLoop()) {
+        padUpdate(&pad);
+        u64 kDown = padGetButtonsDown(&pad);
+        if (kDown & (HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus | HidNpadButton_Minus)) {
+            break;
+        }
+
+        if (display.beginFrame()) {
+            display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+
+            int mx = 240, my = 120, mw = 800, mh = 460;
+            display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+            u32 outlineColor = (failCount == 0) ? Gfx::Colors::STATUS_GREEN : Gfx::Colors::STATUS_YELLOW;
+            display.drawRoundedRectOutline(mx, my, mw, mh, 16, outlineColor, 2);
+
+            display.drawCloudSaveIcon(mx + 50, my + 45, 36, outlineColor);
+            display.drawText(mx + 90, my + 30, "RELATORIO DE SINCRONIZACAO", Gfx::Colors::TEXT_WHITE, 2, true);
+            display.drawText(mx + 90, my + 64, "Envio concluido para o Google Drive", Gfx::Colors::TEXT_MUTED, 1);
+
+            display.fillRect(mx + 30, my + 95, mw - 60, 2, Gfx::Colors::CARD_OUTLINE);
+
+            int ty = my + 130;
+            display.drawText(mx + 60, ty, "Saves enviados com sucesso: " + std::to_string(successCount), Gfx::Colors::STATUS_GREEN, 2, true);
+            ty += 42;
+            display.drawText(mx + 60, ty, "Falhas encontradas: " + std::to_string(failCount), (failCount > 0) ? Gfx::Colors::STATUS_RED : Gfx::Colors::TEXT_MUTED, 2, true);
+            ty += 40;
+
+            if (failCount > 0 && !failDetails.empty()) {
+                display.drawText(mx + 60, ty, "Detalhes das falhas:", Gfx::Colors::JOYCON_YELLOW, 1, true);
+                ty += 24;
+                for (size_t i = 0; i < failDetails.size() && i < 4; ++i) {
+                    display.drawText(mx + 80, ty, "- " + failDetails[i], Gfx::Colors::TEXT_WHITE, 1);
+                    ty += 22;
+                }
+            } else {
+                display.drawText(mx + 60, ty, "Todos os arquivos de save selecionados foram atualizados no Drive!", Gfx::Colors::JOYCON_CYAN, 1);
+                ty += 26;
+                display.drawText(mx + 60, ty, "Nenhum erro ou duplicata foi detectado.", Gfx::Colors::TEXT_MUTED, 1);
+            }
+
+            int btnY = my + mh - 50;
+            display.drawControllerButtonBadge(mx + mw - 180, btnY, "A", Gfx::Colors::JOYCON_RED);
+            display.drawText(mx + mw - 150, btnY + 4, "Continuar", Gfx::Colors::TEXT_WHITE, 1);
+
+            display.endFrame();
+        }
+        svcSleepThread(16'000'000ULL);
+    }
+}
+
+// ==============================================================================
+// ROTINA DE UPLOAD EM LOTE COM PROGRESSO NA TELA
+// ==============================================================================
+void processUploadBatch(Gfx::Display& display,
+                        SaveManager& saveManager,
+                        GDriveClient& client,
+                        AccountUid uid,
+                        const std::vector<GameSaveInfo>& targets,
+                        PadState& pad) {
+    if (targets.empty()) return;
+
+    int total = static_cast<int>(targets.size());
+    int successCount = 0;
+    int failCount = 0;
+    std::vector<std::string> failDetails;
+
+    for (int idx = 0; idx < total; ++idx) {
+        const auto& item = targets[idx];
+        std::string currentStage = "Compactando save (.zip)...";
+
+        // Renderiza tela de progresso da etapa 1 (Zipping)
+        auto renderProgress = [&](const std::string& stage, float fraction) {
+            if (display.beginFrame()) {
+                display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+
+                int mx = 200, my = 150, mw = 880, mh = 420;
+                display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+                display.drawRoundedRectOutline(mx, my, mw, mh, 16, Gfx::Colors::JOYCON_CYAN, 2);
+
+                display.drawCloudSaveIcon(mx + 50, my + 45, 36, Gfx::Colors::JOYCON_CYAN);
+                char headerBuf[128];
+                snprintf(headerBuf, sizeof(headerBuf), "ENVIANDO SAVE [%d/%d]", idx + 1, total);
+                display.drawText(mx + 90, my + 30, headerBuf, Gfx::Colors::TEXT_WHITE, 2, true);
+                display.drawText(mx + 90, my + 64, "Processando dados para o Google Drive", Gfx::Colors::TEXT_MUTED, 1);
+
+                display.fillRect(mx + 30, my + 95, mw - 60, 2, Gfx::Colors::CARD_OUTLINE);
+
+                // Nome do Jogo
+                int ty = my + 125;
+                display.drawText(mx + 50, ty, "Jogo:", Gfx::Colors::TEXT_MUTED, 1);
+                display.drawText(mx + 110, ty, item.titleName, Gfx::Colors::JOYCON_CYAN, 2, true);
+
+                ty += 40;
+                char tidBuf[64];
+                snprintf(tidBuf, sizeof(tidBuf), "Title ID: 0x%016llX", (unsigned long long)item.titleId);
+                display.drawText(mx + 50, ty, tidBuf, Gfx::Colors::TEXT_WHITE, 1);
+
+                ty += 30;
+                display.drawText(mx + 50, ty, "Status: " + stage, Gfx::Colors::DRIVE_YELLOW, 1, true);
+
+                // Barra de progresso
+                int barX = mx + 50, barY = my + 270, barW = mw - 100, barH = 18;
+                display.fillRoundedRect(barX, barY, barW, barH, 9, Gfx::Colors::CARD_OUTLINE);
+                int fillW = std::clamp(static_cast<int>(barW * fraction), 18, barW);
+                display.fillRoundedRect(barX, barY, fillW, barH, 9, Gfx::Colors::STATUS_GREEN);
+
+                char pctBuf[32];
+                snprintf(pctBuf, sizeof(pctBuf), "%d%%", static_cast<int>(fraction * 100.0f));
+                display.drawText(barX + barW + 15, barY + 1, pctBuf, Gfx::Colors::TEXT_WHITE, 1);
+
+                display.drawText(mx + 50, my + 340, "Por favor, aguarde e nao desligue o console.", Gfx::Colors::TEXT_MUTED, 1);
+
+                display.endFrame();
+            }
+        };
+
+        renderProgress("Compactando save (.zip)...", (static_cast<float>(idx) + 0.3f) / total);
+
+        std::string zipPath;
+        bool changed = false;
+        bool procOk = saveManager.processGameSave(item.titleId, uid, zipPath, changed);
+
+        if (!procOk) {
+            failCount++;
+            failDetails.push_back(item.titleName + " (Falha ao ler/montar save)");
+            continue;
+        }
+
+        renderProgress("Enviando para o Google Drive...", (static_cast<float>(idx) + 0.7f) / total);
+
+        u32 newCrc = 0;
+        ZipHelper::calculateFileCrc32(zipPath, newCrc);
+
+        bool upOk = client.uploadSaveArchive(item.titleId, zipPath);
+        if (upOk) {
+            saveManager.markSaveUploaded(item.titleId, newCrc);
+            successCount++;
+        } else {
+            failCount++;
+            failDetails.push_back(item.titleName + " (Falha na transmissao HTTP)");
+        }
+    }
+
+    runSummaryModal(display, pad, successCount, failCount, failDetails);
+}
+
+// ==============================================================================
+// MODAL: SELECIONAR JOGOS PARA SINCRONIZAR
+// ==============================================================================
+void runSelectGamesModal(Gfx::Display& display,
+                         SaveManager& saveManager,
+                         GDriveClient& client,
+                         AccountUid uid,
+                         PadState& pad) {
+    // 1. Carrega lista de saves disponíveis
+    std::vector<GameSaveInfo> saves = saveManager.listAvailableSaves(uid);
+
+    if (saves.empty()) {
+        while (appletMainLoop()) {
+            padUpdate(&pad);
+            u64 kDown = padGetButtonsDown(&pad);
+            if (kDown & (HidNpadButton_A | HidNpadButton_B)) break;
+
+            if (display.beginFrame()) {
+                display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+                int mx = 300, my = 200, mw = 680, mh = 280;
+                display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+                display.drawRoundedRectOutline(mx, my, mw, mh, 16, Gfx::Colors::JOYCON_CYAN, 2);
+                display.drawText(mx + 40, my + 40, "NENHUM SAVE ENCONTRADO", Gfx::Colors::TEXT_WHITE, 2, true);
+                display.drawText(mx + 40, my + 80, "Nao ha dados de save para o usuario ativo.", Gfx::Colors::TEXT_MUTED, 1);
+                display.drawControllerButtonBadge(mx + mw - 160, my + mh - 50, "B", Gfx::Colors::JOYCON_GRAY);
+                display.drawText(mx + mw - 130, my + mh - 46, "Voltar", Gfx::Colors::TEXT_WHITE, 1);
+                display.endFrame();
+            }
+            svcSleepThread(16'000'000ULL);
+        }
+        return;
+    }
+
+    // Marca previamente os jogos de acordo com o tracked_titles salvo se estiver em whitelist
+    for (auto& s : saves) {
+        if (client.isTitleTracked(s.titleId)) {
+            s.selected = true;
+        }
+    }
+
+    int selectedIdx = 0;
+    int scrollOffset = 0;
+    constexpr int ITEMS_PER_PAGE = 7;
+    int totalItems = static_cast<int>(saves.size());
+
+    while (appletMainLoop()) {
+        padUpdate(&pad);
+        u64 kDown = padGetButtonsDown(&pad);
+
+        // (B) Voltar
+        if (kDown & HidNpadButton_B) {
+            break;
+        }
+
+        // Navegação Up / Down
+        if (kDown & (HidNpadButton_Up | HidNpadButton_StickLUp)) {
+            if (selectedIdx > 0) {
+                selectedIdx--;
+                if (selectedIdx < scrollOffset) {
+                    scrollOffset = selectedIdx;
+                }
+            }
+        }
+        if (kDown & (HidNpadButton_Down | HidNpadButton_StickLDown)) {
+            if (selectedIdx < totalItems - 1) {
+                selectedIdx++;
+                if (selectedIdx >= scrollOffset + ITEMS_PER_PAGE) {
+                    scrollOffset = selectedIdx - ITEMS_PER_PAGE + 1;
+                }
+            }
+        }
+
+        // (A) Marcar / desmarcar item
+        if (kDown & HidNpadButton_A) {
+            saves[selectedIdx].selected = !saves[selectedIdx].selected;
+        }
+
+        // (Y) Marcar todos / Desmarcar todos
+        if (kDown & HidNpadButton_Y) {
+            bool anyUnselected = false;
+            for (const auto& s : saves) {
+                if (!s.selected) { anyUnselected = true; break; }
+            }
+            for (auto& s : saves) {
+                s.selected = anyUnselected;
+            }
+        }
+
+        // (X) Salvar seleção atual como padrão do Sysmodule (whitelist)
+        if (kDown & HidNpadButton_X) {
+            std::vector<std::string> tracked;
+            for (const auto& s : saves) {
+                if (s.selected) {
+                    char tidBuf[32];
+                    snprintf(tidBuf, sizeof(tidBuf), "%016llx", (unsigned long long)s.titleId);
+                    tracked.push_back(tidBuf);
+                }
+            }
+            client.setSyncMode("whitelist");
+            client.setTrackedTitles(tracked);
+            client.saveConfig();
+        }
+
+        // (+) Iniciar upload dos itens marcados
+        if (kDown & HidNpadButton_Plus) {
+            std::vector<GameSaveInfo> toUpload;
+            for (const auto& s : saves) {
+                if (s.selected) toUpload.push_back(s);
+            }
+            if (!toUpload.empty()) {
+                // Atualiza também tracked titles se o usuario desejar
+                std::vector<std::string> tracked;
+                for (const auto& s : toUpload) {
+                    char tidBuf[32];
+                    snprintf(tidBuf, sizeof(tidBuf), "%016llx", (unsigned long long)s.titleId);
+                    tracked.push_back(tidBuf);
+                }
+                client.setSyncMode("whitelist");
+                client.setTrackedTitles(tracked);
+                client.saveConfig();
+
+                processUploadBatch(display, saveManager, client, uid, toUpload, pad);
+                break;
+            }
+        }
+
+        // Renderização da Tela de Seleção
+        if (display.beginFrame()) {
+            display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+
+            // Header
+            display.fillRect(0, 0, Gfx::SCREEN_W, 70, Gfx::Colors::HEADER_BG);
+            display.fillRect(0, 68, Gfx::SCREEN_W, 2, Gfx::Colors::CARD_OUTLINE);
+            display.fillRoundedRect(24, 18, 6, 34, 3, Gfx::Colors::JOYCON_CYAN);
+            display.drawText(42, 16, "SELECIONAR JOGOS PARA SINCRONIZAR", Gfx::Colors::TEXT_WHITE, 2, true);
+
+            int selectedCount = 0;
+            for (const auto& s : saves) if (s.selected) selectedCount++;
+            char subHeader[128];
+            snprintf(subHeader, sizeof(subHeader), "Total de Jogos: %d  •  Selecionados para Upload: %d", totalItems, selectedCount);
+            display.drawText(44, 46, subHeader, Gfx::Colors::TEXT_MUTED, 1);
+
+            // Card Principal da Lista
+            int listX = 40, listY = 85, listW = 1200, listH = 550;
+            display.fillRoundedRect(listX, listY, listW, listH, 14, Gfx::Colors::CARD_BG);
+            display.drawRoundedRectOutline(listX, listY, listW, listH, 14, Gfx::Colors::CARD_OUTLINE, 1);
+
+            int itemY = listY + 14;
+            int itemH = 64;
+
+            for (int i = 0; i < ITEMS_PER_PAGE; i++) {
+                int dataIdx = scrollOffset + i;
+                if (dataIdx >= totalItems) break;
+
+                const auto& item = saves[dataIdx];
+                bool isFocused = (dataIdx == selectedIdx);
+
+                int cardX = listX + 16;
+                int cardW = listW - 32;
+
+                if (isFocused) {
+                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_HOVER_BG);
+                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_HOVER_OUT, 2);
+                    display.fillRoundedRect(cardX + 4, itemY + 8, 4, itemH - 16, 2, Gfx::Colors::JOYCON_CYAN);
+                } else {
+                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 10, Gfx::Colors::HEADER_BG);
+                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_OUTLINE, 1);
+                }
+
+                // Caixa Checkbox [X] ou [ ]
+                int chkX = cardX + 22, chkY = itemY + 18, chkW = 28, chkH = 28;
+                if (item.selected) {
+                    display.fillRoundedRect(chkX, chkY, chkW, chkH, 6, Gfx::Colors::STATUS_GREEN);
+                    display.drawText(chkX + 7, chkY + 6, "X", Gfx::Colors::TEXT_WHITE, 1, true);
+                } else {
+                    display.fillRoundedRect(chkX, chkY, chkW, chkH, 6, Gfx::Colors::CARD_BG);
+                    display.drawRoundedRectOutline(chkX, chkY, chkW, chkH, 6, Gfx::Colors::TEXT_MUTED, 2);
+                }
+
+                // Nome do Jogo e Informações
+                int nameX = cardX + 68;
+                display.drawText(nameX, itemY + 14, item.titleName, Gfx::Colors::TEXT_WHITE, 1, true);
+
+                char infoBuf[128];
+                float szMb = static_cast<float>(item.saveSize) / (1024.0f * 1024.0f);
+                snprintf(infoBuf, sizeof(infoBuf), "Title ID: 0x%016llX   •   Tamanho estimado: %.2f MB",
+                         (unsigned long long)item.titleId, szMb);
+                display.drawText(nameX, itemY + 38, infoBuf, isFocused ? Gfx::Colors::JOYCON_CYAN : Gfx::Colors::TEXT_MUTED, 1);
+
+                itemY += itemH + 10;
+            }
+
+            // Scroll Indicator (se houver mais itens)
+            if (totalItems > ITEMS_PER_PAGE) {
+                int scrollTrackX = listX + listW - 14;
+                int scrollTrackY = listY + 20;
+                int scrollTrackH = listH - 40;
+                display.fillRect(scrollTrackX, scrollTrackY, 4, scrollTrackH, Gfx::Colors::CARD_OUTLINE);
+
+                float thumbRatio = static_cast<float>(ITEMS_PER_PAGE) / totalItems;
+                int thumbH = std::max(20, static_cast<int>(scrollTrackH * thumbRatio));
+                float offsetRatio = static_cast<float>(scrollOffset) / (totalItems - ITEMS_PER_PAGE);
+                int thumbY = scrollTrackY + static_cast<int>((scrollTrackH - thumbH) * offsetRatio);
+                display.fillRect(scrollTrackX - 1, thumbY, 6, thumbH, Gfx::Colors::JOYCON_CYAN);
+            }
+
+            // Footer com Legenda
+            int footerY = 665;
+            display.fillRect(0, footerY - 10, Gfx::SCREEN_W, 65, Gfx::Colors::HEADER_BG);
+            display.fillRect(0, footerY - 11, Gfx::SCREEN_W, 1, Gfx::Colors::CARD_OUTLINE);
+
+            int btnX = 30;
+            display.drawControllerButtonBadge(btnX, footerY, "A", Gfx::Colors::JOYCON_RED);
+            display.drawText(btnX + 30, footerY + 4, "Marcar/Desmarcar", Gfx::Colors::TEXT_WHITE, 1);
+
+            btnX += 190;
+            display.drawControllerButtonBadge(btnX, footerY, "Y", Gfx::Colors::JOYCON_YELLOW);
+            display.drawText(btnX + 30, footerY + 4, "Todos/Nenhum", Gfx::Colors::TEXT_WHITE, 1);
+
+            btnX += 160;
+            display.drawControllerButtonBadge(btnX, footerY, "X", Gfx::Colors::JOYCON_BLUE);
+            display.drawText(btnX + 30, footerY + 4, "Salvar como Padrao", Gfx::Colors::TEXT_WHITE, 1);
+
+            btnX += 210;
+            display.drawPillButtonBadge(btnX, footerY + 2, "+");
+            display.drawText(btnX + 30, footerY + 4, "Iniciar Upload", Gfx::Colors::TEXT_WHITE, 1);
+
+            btnX += 170;
+            display.drawControllerButtonBadge(btnX, footerY, "B", Gfx::Colors::JOYCON_GRAY);
+            display.drawText(btnX + 30, footerY + 4, "Voltar", Gfx::Colors::TEXT_WHITE, 1);
+
+            display.endFrame();
+        }
+
+        svcSleepThread(16'000'000ULL);
+    }
+}
+
+// ==============================================================================
 // PONTO DE ENTRADA PRINCIPAL DA INTERFACE GRAFICA
 // ==============================================================================
 int main(int argc, char* argv[]) {
     // Inicialização dos serviços essenciais do Horizon OS
     smInitialize();
+    setInitialize();
+    setsysInitialize();
     fsInitialize();
     fsdevMountSdmc();
     socketInitializeDefault();
@@ -264,9 +657,10 @@ int main(int argc, char* argv[]) {
     }
 
     GDriveClient client;
+    SaveManager saveManager;
 
     int selectedItem = 0;
-    constexpr int TOTAL_MENU_ITEMS = 7;
+    constexpr int TOTAL_MENU_ITEMS = 9;
     std::string toastMessage = "Pronto! Selecione uma opcao para iniciar.";
     u32 toastColor = Gfx::Colors::STATUS_GREEN;
 
@@ -386,7 +780,52 @@ int main(int argc, char* argv[]) {
                     toastColor   = bootFlagActive ? Gfx::Colors::STATUS_GREEN : Gfx::Colors::STATUS_YELLOW;
                     break;
 
-                case 3: { // Validar/Criar Pasta
+                case 3: { // Subir Todos os Saves Agora
+                    if (!client.isAuthorized()) {
+                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
+                        toastColor   = Gfx::Colors::STATUS_YELLOW;
+                    } else if (!wifiActive) {
+                        toastMessage = "Erro: Sem conexao com a internet!";
+                        toastColor   = Gfx::Colors::STATUS_RED;
+                    } else {
+                        AccountUid uid{};
+                        if (!saveManager.getActiveAccount(uid)) {
+                            toastMessage = "Erro: Nenhuma conta de usuario ativa encontrada no Switch.";
+                            toastColor   = Gfx::Colors::STATUS_RED;
+                        } else {
+                            std::vector<GameSaveInfo> allSaves = saveManager.listAvailableSaves(uid);
+                            if (allSaves.empty()) {
+                                toastMessage = "Nenhum save de jogo encontrado para envio.";
+                                toastColor   = Gfx::Colors::STATUS_YELLOW;
+                            } else {
+                                processUploadBatch(display, saveManager, client, uid, allSaves, pad);
+                                toastMessage = "Upload em lote concluido com sucesso!";
+                                toastColor   = Gfx::Colors::STATUS_GREEN;
+                            }
+                        }
+                    }
+                    break;
+                }
+
+                case 4: { // Selecionar Jogos para Sincronizar
+                    if (!client.isAuthorized()) {
+                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
+                        toastColor   = Gfx::Colors::STATUS_YELLOW;
+                    } else {
+                        AccountUid uid{};
+                        if (!saveManager.getActiveAccount(uid)) {
+                            toastMessage = "Erro: Nenhuma conta de usuario ativa encontrada no Switch.";
+                            toastColor   = Gfx::Colors::STATUS_RED;
+                        } else {
+                            runSelectGamesModal(display, saveManager, client, uid, pad);
+                            toastMessage = "Sincronizacao de jogos finalizada.";
+                            toastColor   = Gfx::Colors::STATUS_GREEN;
+                        }
+                    }
+                    break;
+                }
+
+                case 5: { // Validar/Criar Pasta
                     if (!client.isAuthorized()) {
                         toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
                         toastColor   = Gfx::Colors::STATUS_YELLOW;
@@ -407,7 +846,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 4: { // Editar Client ID
+                case 6: { // Editar Client ID
                     std::string newId = showKeyboard("Digite o Google OAuth Client ID", client.getClientId());
                     client.setClientId(newId);
                     client.saveConfig();
@@ -416,7 +855,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 5: { // Editar Client Secret
+                case 7: { // Editar Client Secret
                     std::string newSec = showKeyboard("Digite o Google OAuth Client Secret", client.getClientSecret());
                     client.setClientSecret(newSec);
                     client.saveConfig();
@@ -425,7 +864,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 6: { // Editar Nome da Pasta
+                case 8: { // Editar Nome da Pasta
                     std::string newFolder = showKeyboard("Nome da pasta de saves no Google Drive", client.getFolderName());
                     client.setFolderName(newFolder);
                     client.saveConfig();
@@ -555,14 +994,16 @@ int main(int argc, char* argv[]) {
                 {"Vincular Conta Google (Device Flow na Tela)", "Exibe o codigo de confirmacao para ativar no celular ou PC"},
                 {"Iniciar / Parar Sysmodule em Segundo Plano", "Alterna o processo daemon de monitoramento de saves"},
                 {"Alternar Inicializacao no Boot (boot2.flag)",  "Inicia automaticamente o daemon toda vez que ligar o Switch"},
+                {"Subir Todos os Saves Agora (Upload em Lote)",  "Compacta e envia todos os saves do usuario ativo para o Drive"},
+                {"Selecionar Jogos para Sincronizar",          "Lista os jogos para marcar quais enviar ou salvar como padrao"},
                 {"Validar / Criar Pasta de Saves no Google Drive", "Testa a conexao com a API e assegura a pasta destino"},
                 {"Configurar Google OAuth Client ID",           "Insira a chave Client ID usando o teclado virtual Horizon"},
                 {"Configurar Google OAuth Client Secret",       "Insira o Client Secret usando o teclado virtual Horizon"},
                 {"Alterar Nome da Pasta de Destino no Drive",    "Altere o nome da pasta principal de backup no Drive"}
             };
 
-            int itemY = menuBoxY + 44;
-            int itemH = 58;
+            int itemY = menuBoxY + 36;
+            int itemH = 46;
 
             for (int i = 0; i < TOTAL_MENU_ITEMS; i++) {
                 bool isSelected = (i == selectedItem);
@@ -570,24 +1011,24 @@ int main(int argc, char* argv[]) {
                 int cardW = rightColW - 32;
 
                 if (isSelected) {
-                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_HOVER_BG);
-                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_HOVER_OUT, 2);
+                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_HOVER_BG);
+                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_HOVER_OUT, 2);
 
                     // Indicador de seleção
-                    display.fillRoundedRect(cardX + 4, itemY + 8, 4, itemH - 16, 2, Gfx::Colors::JOYCON_CYAN);
+                    display.fillRoundedRect(cardX + 4, itemY + 6, 4, itemH - 12, 2, Gfx::Colors::JOYCON_CYAN);
 
                     // Título e Descrição
-                    display.drawText(cardX + 24, itemY + 11, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1, true);
-                    display.drawText(cardX + 24, itemY + 33, menuItems[i].desc, Gfx::Colors::JOYCON_CYAN, 1);
+                    display.drawText(cardX + 20, itemY + 7, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1, true);
+                    display.drawText(cardX + 20, itemY + 26, menuItems[i].desc, Gfx::Colors::JOYCON_CYAN, 1);
                 } else {
-                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_BG);
-                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 10, Gfx::Colors::CARD_OUTLINE, 1);
+                    display.fillRoundedRect(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_BG);
+                    display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_OUTLINE, 1);
 
-                    display.drawText(cardX + 24, itemY + 11, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1);
-                    display.drawText(cardX + 24, itemY + 33, menuItems[i].desc, Gfx::Colors::TEXT_MUTED, 1);
+                    display.drawText(cardX + 20, itemY + 7, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1);
+                    display.drawText(cardX + 20, itemY + 26, menuItems[i].desc, Gfx::Colors::TEXT_MUTED, 1);
                 }
 
-                itemY += itemH + 8;
+                itemY += itemH + 6;
             }
 
             // Barra de Notificação / Toast no fundo da coluna direita
@@ -637,6 +1078,8 @@ int main(int argc, char* argv[]) {
     pmshellExit();
     pmdmntExit();
     nifmExit();
+    setsysExit();
+    setExit();
     socketExit();
     fsdevUnmountAll();
     fsExit();

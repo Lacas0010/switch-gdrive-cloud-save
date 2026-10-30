@@ -46,6 +46,100 @@ bool SaveManager::getActiveAccount(AccountUid& outUid) {
     return false;
 }
 
+std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
+    std::vector<GameSaveInfo> saves;
+
+    FsSaveDataInfoReader reader;
+    Result rc = fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User);
+    if (R_FAILED(rc)) {
+        return saves;
+    }
+
+    // Inicializa NS para obtencao dos metadados dos jogos (nomes)
+    bool nsInitialized = R_SUCCEEDED(nsInitialize());
+
+    // Aloca buffer para controle NACP dinamicamente no Heap para evitar estourar a stack (~144KB)
+    NsApplicationControlData* ctlData = nullptr;
+    if (nsInitialized) {
+        ctlData = static_cast<NsApplicationControlData*>(malloc(sizeof(NsApplicationControlData)));
+    }
+
+    FsSaveDataInfo infoBuf[16];
+    s64 totalRead = 0;
+
+    while (true) {
+        rc = fsSaveDataInfoReaderRead(&reader, infoBuf, 16, &totalRead);
+        if (R_FAILED(rc) || totalRead <= 0) break;
+
+        for (s64 i = 0; i < totalRead; i++) {
+            // Filtra apenas saves de conta do usuario especificado e ignora Title ID 0
+            if (infoBuf[i].save_data_type != FsSaveDataType_Account) continue;
+            if (infoBuf[i].application_id == 0) continue;
+            if (memcmp(&infoBuf[i].uid, &uid, sizeof(AccountUid)) != 0) continue;
+
+            u64 tid = infoBuf[i].application_id;
+
+            // Evita duplicatas se houver mais de um registro do mesmo Title ID
+            bool alreadyInList = false;
+            for (const auto& existing : saves) {
+                if (existing.titleId == tid) {
+                    alreadyInList = true;
+                    break;
+                }
+            }
+            if (alreadyInList) continue;
+
+            GameSaveInfo item;
+            item.titleId = tid;
+            item.saveSize = infoBuf[i].size;
+            item.selected = false;
+
+            // Tenta obter o nome legivel do jogo via NACP
+            std::string gameTitle;
+            if (nsInitialized && ctlData) {
+                memset(ctlData, 0, sizeof(NsApplicationControlData));
+                u64 actualSize = 0;
+                Result nsrc = nsGetApplicationControlData(
+                    NsApplicationControlSource_Storage,
+                    tid,
+                    ctlData,
+                    sizeof(NsApplicationControlData),
+                    &actualSize
+                );
+
+                if (R_SUCCEEDED(nsrc)) {
+                    NacpLanguageEntry* langEntry = nullptr;
+                    if (R_SUCCEEDED(nacpGetLanguageEntry(&ctlData->nacp, &langEntry)) && langEntry != nullptr) {
+                        if (langEntry->name[0] != '\0') {
+                            gameTitle = langEntry->name;
+                        }
+                    }
+                }
+            }
+
+            // Fallback para formatacao hexadecimal do Title ID se nao encontrar o nome
+            if (gameTitle.empty()) {
+                char tidBuf[32];
+                snprintf(tidBuf, sizeof(tidBuf), "Title 0x%016llX", (unsigned long long)tid);
+                gameTitle = tidBuf;
+            }
+
+            item.titleName = gameTitle;
+            saves.push_back(item);
+        }
+    }
+
+    if (ctlData) {
+        free(ctlData);
+    }
+    if (nsInitialized) {
+        nsExit();
+    }
+    fsSaveDataInfoReaderClose(&reader);
+
+    return saves;
+}
+
 bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged) {
     outChanged = false;
 

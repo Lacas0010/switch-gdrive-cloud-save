@@ -43,8 +43,8 @@ export TOPDIR   := $(CURDIR)
 export VPATH    := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR  := $(CURDIR)/$(BUILD)
 
-# Filtra apenas main.cpp da GUI e GDriveClient.cpp do core
-CPPFILES        := source/main.cpp ../source/GDriveClient.cpp
+# Filtra apenas main.cpp da GUI, GDriveClient.cpp, SaveManager.cpp e ZipHelper.cpp do core
+CPPFILES        := source/main.cpp ../source/GDriveClient.cpp ../source/SaveManager.cpp ../source/ZipHelper.cpp
 
 export OFILES   := $(notdir $(CPPFILES:.cpp=.o))
 
@@ -97,6 +97,14 @@ main.o: $(TOPDIR)/source/main.cpp
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 GDriveClient.o: $(TOPDIR)/../source/GDriveClient.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+SaveManager.o: $(TOPDIR)/../source/SaveManager.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+ZipHelper.o: $(TOPDIR)/../source/ZipHelper.cpp
 	@echo "Compilando $(notdir $<)..."
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 

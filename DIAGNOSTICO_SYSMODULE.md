@@ -112,3 +112,25 @@ Mesmo após o Kernel criar o processo, havia dois problemas fatais na inicializa
    - Implementados `extern "C" void __appInit(void)` e `extern "C" void __appExit(void)` seguindo o template oficial do `switchbrew/switch-examples` e `sys-clk` (sem chamar `fsdevMountSdmc()` duas vezes).
    - Adicionado log de diagnóstico em arquivo (`sdmc:/config/gdrive-sync/sysmodule.log`) para rastrear cada etapa do boot e funcionamento em background.
    - Inicialização resiliente dos serviços (`pmdmnt`, `pminfo`, `nifm`, `socket`) com loop de espera pelo sistema no boot.
+
+---
+
+## 5. Verificação Binária do `exefs.nsp` Compilado (Run `41113518677`, Commit `c16889d`)
+
+A inspeção direta dos bytes do `main.npdm` embutido em `dist/atmosphere/contents/4200000000000010/exefs.nsp` confirmou:
+- **`ACID.flags` (offset `+0x20C`) = `0x9`**:
+  - Bit 0 (`AcidFlag_Production` / `is_retail`) = `1`
+  - Bits 2..3 (`PoolPartition`) = `2` (`PoolPartition_System`)
+- **`ACI0` Kernel Capabilities (10 descritores de 32 bits):**
+  - `cap[0] = 0x030363f7` (`KernelFlags`: prio `44`, core `3`)
+  - `cap[1..6]` (`SyscallMask` bancos 0 a 5 completos conforme `switchbrew/switch-examples`)
+  - `cap[7] = 0x00183fff` (`KernelVersion` = `0x0030`, exigido pelo Mesosphere em `kern_k_process.cpp:183`)
+  - `cap[8] = 0x02007fff` (`HandleTable` = `512`)
+  - `cap[9] = 0x0008ffff` (`DebugFlags` = `force_debug: true`)
+
+## 6. Deploy Realizado no Switch via MTP
+- `sdmc:/atmosphere/contents/4200000000000010/exefs.nsp` (730 KB)
+- `sdmc:/atmosphere/contents/4200000000000010/toolbox.json` (264 bytes)
+- `sdmc:/atmosphere/contents/4200000000000010/flags/boot2.flag`
+- `sdmc:/switch/gdrive-sync/gdrive-sync.nro` (1,19 MB)
+- Pastas antigas de backup (`_old_` / `_bak_`) foram removidas de `atmosphere/contents/` e `switch/`.

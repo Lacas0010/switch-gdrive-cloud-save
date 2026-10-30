@@ -30,6 +30,14 @@ public:
     std::string getPendingUserCode() const { return m_pendingUserCode; }
     std::string getPendingVerifyUrl() const { return m_pendingVerifyUrl; }
 
+    // Sync mode ("all" | "whitelist") e tracked_titles
+    std::string getSyncMode() const { return m_syncMode; }
+    void setSyncMode(const std::string& mode) { m_syncMode = mode; }
+
+    const std::vector<std::string>& getTrackedTitles() const { return m_trackedTitles; }
+    void setTrackedTitles(const std::vector<std::string>& titles) { m_trackedTitles = titles; }
+    bool isTitleTracked(u64 titleId) const;
+
     // Inicia fluxo OAuth2 Device Flow gravando auth_request.txt no SD
     bool requestDeviceCode();
 
@@ -59,6 +67,9 @@ private:
     std::string m_pendingDeviceCode;
     std::string m_pendingUserCode;
     std::string m_pendingVerifyUrl;
+
+    std::string m_syncMode = "all"; // "all" ou "whitelist"
+    std::vector<std::string> m_trackedTitles;
     u64         m_lastPollTime;
     u32         m_pollIntervalSec;
 
