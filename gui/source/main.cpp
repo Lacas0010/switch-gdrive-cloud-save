@@ -53,9 +53,13 @@ bool startSysmodule(std::string& outMsg) {
 
     u64 pid = 0;
     Result rc = pmshellLaunchProgram(0, &loc, &pid);
+    if (rc == 0xE801) {
+        outMsg = "Sysmodule ja esta ativo em segundo plano!";
+        return true;
+    }
     if (R_FAILED(rc)) {
         char errBuf[128];
-        snprintf(errBuf, sizeof(errBuf), "Erro 0x%X (Reinicie o Switch para carregar via boot2.flag)", rc);
+        snprintf(errBuf, sizeof(errBuf), "Erro 0x%X (Abra via [R] no jogo ou reinicie)", rc);
         outMsg = errBuf;
         return false;
     }
@@ -366,7 +370,8 @@ void processUploadBatch(Gfx::Display& display,
 
         std::string zipPath;
         bool changed = false;
-        bool procOk = saveManager.processGameSave(item.titleId, uid, zipPath, changed);
+        // forceArchive = true para que o .zip nao seja apagado mesmo se o CRC for identico
+        bool procOk = saveManager.processGameSave(item.titleId, uid, zipPath, changed, true);
 
         if (!procOk) {
             failCount++;
@@ -379,13 +384,15 @@ void processUploadBatch(Gfx::Display& display,
         u32 newCrc = 0;
         ZipHelper::calculateFileCrc32(zipPath, newCrc);
 
-        bool upOk = client.uploadSaveArchive(item.titleId, zipPath);
+        std::string uploadErr;
+        bool upOk = client.uploadSaveArchive(item.titleId, zipPath, &uploadErr);
         if (upOk) {
             saveManager.markSaveUploaded(item.titleId, newCrc);
             successCount++;
         } else {
             failCount++;
-            failDetails.push_back(item.titleName + " (Falha na transmissao HTTP)");
+            std::string errDesc = uploadErr.empty() ? "Falha na transmissao HTTP" : uploadErr;
+            failDetails.push_back(item.titleName + " (" + errDesc + ")");
         }
     }
 

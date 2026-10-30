@@ -23,8 +23,8 @@ public:
     std::vector<GameSaveInfo> listAvailableSaves(AccountUid uid);
 
     // Processa o save: monta "save:/", compacta em .zip temporario no SD e verifica alteracao via CRC32
-    // Retorna true caso haja um novo save pronto para upload e que seja diferente do backup anterior
-    bool processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged);
+    // Se forceArchive = true, preserva o arquivo .zip mesmo se o CRC for identico ao anterior (util para uploads manuais)
+    bool processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged, bool forceArchive = false);
 
     // Atualiza o estado salvo apos o upload com sucesso
     void markSaveUploaded(u64 titleId, u32 crc);

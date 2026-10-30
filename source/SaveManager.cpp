@@ -144,7 +144,7 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
     return saves;
 }
 
-bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged) {
+bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged, bool forceArchive) {
     outChanged = false;
 
     // Se o titleId fornecido contiver a flag de update/patch (bit 11), normaliza para a base
@@ -216,8 +216,8 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
     u32 currentCrc = 0;
     if (ZipHelper::calculateFileCrc32(outZipPath, currentCrc)) {
         auto it = m_savedCrcs.find(baseTitleId);
-        if (it == m_savedCrcs.end() || it->second != currentCrc) {
-            // Houve alteracao nos dados!
+        if (forceArchive || it == m_savedCrcs.end() || it->second != currentCrc) {
+            // Houve alteracao nos dados ou upload manual forcado!
             outChanged = true;
             return true;
         } else {

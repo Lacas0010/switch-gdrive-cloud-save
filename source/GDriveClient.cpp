@@ -3,12 +3,29 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <cstdarg>
 #include <sstream>
 #include <iomanip>
 #include <vector>
 #include <curl/curl.h>
 
 namespace {
+    void logClient(const char* fmt, ...) {
+        FILE* f = fopen("sdmc:/config/gdrive-sync/sysmodule.log", "a");
+        if (!f) return;
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(f, fmt, args);
+        fprintf(f, "\n");
+        va_end(args);
+        fclose(f);
+    }
+
+    size_t curlFileReadCallback(char* buffer, size_t size, size_t nitems, void* userdata) {
+        FILE* fp = static_cast<FILE*>(userdata);
+        return fread(buffer, size, nitems, fp);
+    }
+
     std::string urlEncode(const std::string& value) {
         std::ostringstream escaped;
         escaped.fill('0');
@@ -226,22 +243,24 @@ std::string GDriveClient::httpPost(const std::string& url, const std::string& po
     if (!authHeader.empty()) {
         headers = curl_slist_append(headers, ("Authorization: Bearer " + authHeader).c_str());
     }
+    headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
+    headers = curl_slist_append(headers, "Expect:");
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_CAINFO, Config::getCaBundlePath().c_str());
-
-    if (headers) {
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    }
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     CURLcode res = curl_easy_perform(curl);
-    if (headers) curl_slist_free_all(headers);
+    if (res != CURLE_OK) {
+        logClient("[HTTP] POST %s falhou (code %d): %s", url.c_str(), res, curl_easy_strerror(res));
+    }
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     return (res == CURLE_OK) ? response : "";
@@ -256,6 +275,7 @@ std::string GDriveClient::httpPatch(const std::string& url, const std::string& p
     if (!authHeader.empty()) {
         headers = curl_slist_append(headers, ("Authorization: Bearer " + authHeader).c_str());
     }
+    headers = curl_slist_append(headers, "Expect:");
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
@@ -263,16 +283,16 @@ std::string GDriveClient::httpPatch(const std::string& url, const std::string& p
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_CAINFO, Config::getCaBundlePath().c_str());
-
-    if (headers) {
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    }
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     CURLcode res = curl_easy_perform(curl);
-    if (headers) curl_slist_free_all(headers);
+    if (res != CURLE_OK) {
+        logClient("[HTTP] PATCH %s falhou (code %d): %s", url.c_str(), res, curl_easy_strerror(res));
+    }
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     return (res == CURLE_OK) ? response : "";
@@ -293,7 +313,7 @@ std::string GDriveClient::httpGet(const std::string& url, const std::string& aut
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 20L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_CAINFO, Config::getCaBundlePath().c_str());
 
@@ -302,6 +322,9 @@ std::string GDriveClient::httpGet(const std::string& url, const std::string& aut
     }
 
     CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        logClient("[HTTP] GET %s falhou (code %d): %s", url.c_str(), res, curl_easy_strerror(res));
+    }
     if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
@@ -388,16 +411,32 @@ bool GDriveClient::pollAuthorization() {
     return false;
 }
 
-bool GDriveClient::refreshAccessToken() {
-    if (m_refreshToken.empty()) return false;
+bool GDriveClient::refreshAccessToken(std::string* outError) {
+    if (m_refreshToken.empty()) {
+        if (outError) *outError = "Refresh token ausente no config.json";
+        logClient("[AUTH] refreshAccessToken falhou: refresh_token vazio.");
+        return false;
+    }
 
-    std::string postData = "client_id=" + m_clientId +
-                           "&client_secret=" + m_clientSecret +
-                           "&refresh_token=" + m_refreshToken +
+    std::string postData = "client_id=" + urlEncode(m_clientId) +
+                           "&client_secret=" + urlEncode(m_clientSecret) +
+                           "&refresh_token=" + urlEncode(m_refreshToken) +
                            "&grant_type=refresh_token";
 
     std::string resp = httpPost("https://oauth2.googleapis.com/token", postData);
-    if (resp.empty()) return false;
+    if (resp.empty()) {
+        if (outError) *outError = "Sem resposta do servidor OAuth (verifique Wi-Fi/SSL)";
+        logClient("[AUTH] refreshAccessToken falhou: sem resposta do Google.");
+        return false;
+    }
+
+    std::string err = extractJsonString(resp, "error_description");
+    if (err.empty()) err = extractJsonString(resp, "error");
+    if (!err.empty()) {
+        if (outError) *outError = "OAuth: " + err;
+        logClient("[AUTH] refreshAccessToken erro: %s", err.c_str());
+        return false;
+    }
 
     std::string newToken = extractJsonString(resp, "access_token");
     if (!newToken.empty()) {
@@ -406,6 +445,8 @@ bool GDriveClient::refreshAccessToken() {
         return true;
     }
 
+    if (outError) *outError = "access_token ausente na resposta OAuth";
+    logClient("[AUTH] refreshAccessToken falhou: access_token ausente na resposta.");
     return false;
 }
 
@@ -488,14 +529,19 @@ std::string GDriveClient::findFileInFolder(const std::string& fileName, const st
     return extractFirstFileId(searchResp);
 }
 
-bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
-    if (!refreshAccessToken()) {
+bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, std::string* outError) {
+    if (!refreshAccessToken(outError)) {
+        logClient("[UPLOAD] Falha ao renovar token de acesso para titleId 0x%016llX", (unsigned long long)titleId);
+        remove(zipPath.c_str());
         return false;
     }
 
     // Garante que a pasta destino exista no Google Drive (ex: "Switch Saves")
     std::string folderId = ensureFolderExists(m_folderName);
     if (folderId.empty()) {
+        if (outError) *outError = "Pasta de destino nao encontrada/criada no Drive";
+        logClient("[UPLOAD] ensureFolderExists retornou vazio para '%s'", m_folderName.c_str());
+        remove(zipPath.c_str());
         return false;
     }
 
@@ -509,7 +555,11 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     bool isUpdate = !existingFileId.empty();
 
     FILE* fd = fopen(zipPath.c_str(), "rb");
-    if (!fd) return false;
+    if (!fd) {
+        if (outError) *outError = "Nao foi possivel abrir o arquivo .zip";
+        logClient("[UPLOAD] fopen falhou para zipPath: %s", zipPath.c_str());
+        return false;
+    }
 
     std::string boundary = "-------CloudSaveBoundary7MA4YWxkTrZu0gW";
     std::string metadata;
@@ -536,6 +586,9 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     FILE* streamFile = fopen(payloadPath.c_str(), "wb");
     if (!streamFile) {
         fclose(fd);
+        remove(zipPath.c_str());
+        if (outError) *outError = "Falha ao criar stream temporario";
+        logClient("[UPLOAD] fopen falhou para streamFile: %s", payloadPath.c_str());
         return false;
     }
 
@@ -555,6 +608,9 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     FILE* uploadFp = fopen(payloadPath.c_str(), "rb");
     if (!uploadFp) {
         remove(payloadPath.c_str());
+        remove(zipPath.c_str());
+        if (outError) *outError = "Falha ao abrir stream de upload";
+        logClient("[UPLOAD] fopen falhou para uploadFp: %s", payloadPath.c_str());
         return false;
     }
 
@@ -566,6 +622,9 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     if (!curl) {
         fclose(uploadFp);
         remove(payloadPath.c_str());
+        remove(zipPath.c_str());
+        if (outError) *outError = "Falha ao inicializar cURL";
+        logClient("[UPLOAD] curl_easy_init falhou");
         return false;
     }
 
@@ -576,8 +635,9 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
 
     std::string uploadUrl;
     if (isUpdate) {
-        // Sobrescreve versao existente sem duplicar arquivos
+        // Sobrescreve versao existente sem duplicar arquivos via PATCH
         uploadUrl = "https://www.googleapis.com/upload/drive/v3/files/" + existingFileId + "?uploadType=multipart";
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
     } else {
         uploadUrl = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
@@ -586,6 +646,7 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
 
     std::string response;
     curl_easy_setopt(curl, CURLOPT_URL, uploadUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, curlFileReadCallback);
     curl_easy_setopt(curl, CURLOPT_READDATA, uploadFp);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(totalPayloadSize));
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -599,6 +660,8 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);    // por mais de 45 segundos, aborta
 
     CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
@@ -607,5 +670,24 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath) {
     remove(payloadPath.c_str());
     remove(zipPath.c_str());
 
-    return (res == CURLE_OK);
+    if (res != CURLE_OK) {
+        std::string errStr = curl_easy_strerror(res);
+        if (outError) *outError = "curl: " + errStr;
+        logClient("[UPLOAD] curl_easy_perform falhou (code %d): %s", res, errStr.c_str());
+        return false;
+    }
+
+    if (httpCode < 200 || httpCode >= 300) {
+        std::string apiErr = extractJsonString(response, "message");
+        if (apiErr.empty()) apiErr = "HTTP " + std::to_string(httpCode);
+        else apiErr = "HTTP " + std::to_string(httpCode) + " (" + apiErr + ")";
+        if (outError) *outError = apiErr;
+        logClient("[UPLOAD] Google Drive retornou erro %ld: %s", httpCode, response.c_str());
+        return false;
+    }
+
+    logClient("[UPLOAD] Upload concluido com sucesso para titleId 0x%016llX (%s)",
+              (unsigned long long)titleId, isUpdate ? "PATCH" : "POST");
+    return true;
+}
 }

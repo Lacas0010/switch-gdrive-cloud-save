@@ -46,7 +46,7 @@ public:
     bool pollAuthorization();
 
     // Renova o token de acesso de curta duracao
-    bool refreshAccessToken();
+    bool refreshAccessToken(std::string* outError = nullptr);
 
     // Garante que a pasta destino exista no Google Drive (cria se necessario e salva folder_id)
     std::string ensureFolderExists(const std::string& folderName = "");
@@ -55,7 +55,7 @@ public:
     std::string findFileInFolder(const std::string& fileName, const std::string& parentFolderId);
 
     // Faz upload ou atualizacao (PATCH) do .zip do save sem duplicatas
-    bool uploadSaveArchive(u64 titleId, const std::string& zipPath);
+    bool uploadSaveArchive(u64 titleId, const std::string& zipPath, std::string* outError = nullptr);
 
 private:
     std::string m_clientId;
