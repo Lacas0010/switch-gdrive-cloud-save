@@ -1,5 +1,6 @@
 #include "GDriveClient.hpp"
 #include "Config.hpp"
+#include "Logger.hpp"
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -247,6 +248,7 @@ std::string GDriveClient::httpPost(const std::string& url, const std::string& po
     headers = curl_slist_append(headers, "Expect:");
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
@@ -278,6 +280,7 @@ std::string GDriveClient::httpPatch(const std::string& url, const std::string& p
     headers = curl_slist_append(headers, "Expect:");
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, patchData.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
@@ -309,6 +312,7 @@ std::string GDriveClient::httpGet(const std::string& url, const std::string& aut
     }
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
@@ -520,18 +524,29 @@ std::string GDriveClient::ensureFolderExists(const std::string& folderName) {
 }
 
 std::string GDriveClient::findFileInFolder(const std::string& fileName, const std::string& parentFolderId) {
-    // Busca se ja existe arquivo com o mesmo nome na pasta:
-    // q=name='<nome>' and '<parent>' in parents and trashed=false
-    std::string rawQuery = "name='" + fileName + "' and '" + parentFolderId + "' in parents and trashed=false";
-    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name)";
+    // Busca se ja existe arquivo com o mesmo nome na pasta (inclusive se estiver na lixeira)
+    std::string rawQuery = "name='" + fileName + "' and '" + parentFolderId + "' in parents";
+    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name,trashed)";
 
     std::string searchResp = httpGet(searchUrl, m_accessToken);
-    return extractFirstFileId(searchResp);
+    std::string foundId = extractFirstFileId(searchResp);
+
+    if (!foundId.empty()) {
+        std::string trashedVal = extractJsonString(searchResp, "trashed");
+        if (trashedVal == "true") {
+            httpPatch("https://www.googleapis.com/drive/v3/files/" + foundId, "{\"trashed\": false}", m_accessToken);
+            logClient("[DRIVE] Arquivo %s (ID %s) recuperado da lixeira.", fileName.c_str(), foundId.c_str());
+        }
+    }
+
+    return foundId;
 }
 
 bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, std::string* outError) {
     if (!refreshAccessToken(outError)) {
         logClient("[UPLOAD] Falha ao renovar token de acesso para titleId 0x%016llX", (unsigned long long)titleId);
+        Logger::logSync("[%016llX] Google Drive API: FAILED (Token refresh failed: %s)",
+                        (unsigned long long)titleId, (outError ? outError->c_str() : "unknown"));
         remove(zipPath.c_str());
         return false;
     }
@@ -541,6 +556,8 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     if (folderId.empty()) {
         if (outError) *outError = "Pasta de destino nao encontrada/criada no Drive";
         logClient("[UPLOAD] ensureFolderExists retornou vazio para '%s'", m_folderName.c_str());
+        Logger::logSync("[%016llX] Google Drive API: FAILED (Destination folder '%s' not found)",
+                        (unsigned long long)titleId, m_folderName.c_str());
         remove(zipPath.c_str());
         return false;
     }
@@ -558,6 +575,8 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     if (!fd) {
         if (outError) *outError = "Nao foi possivel abrir o arquivo .zip";
         logClient("[UPLOAD] fopen falhou para zipPath: %s", zipPath.c_str());
+        Logger::logSync("[%016llX] Google Drive API: FAILED (fopen zip failed)",
+                        (unsigned long long)titleId);
         return false;
     }
 
@@ -648,6 +667,7 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
 
     std::string response;
     curl_easy_setopt(curl, CURLOPT_URL, uploadUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
     curl_easy_setopt(curl, CURLOPT_READFUNCTION, curlFileReadCallback);
     curl_easy_setopt(curl, CURLOPT_READDATA, uploadFp);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(totalPayloadSize));
@@ -675,6 +695,8 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
         std::string errStr = curl_easy_strerror(res);
         if (outError) *outError = "curl: " + errStr;
         logClient("[UPLOAD] curl_easy_perform falhou (code %d): %s", res, errStr.c_str());
+        Logger::logSync("[%016llX] Google Drive API: Network Error (%s)",
+                        (unsigned long long)titleId, errStr.c_str());
         return false;
     }
 
@@ -684,8 +706,18 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
         else apiErr = "HTTP " + std::to_string(httpCode) + " (" + apiErr + ")";
         if (outError) *outError = apiErr;
         logClient("[UPLOAD] Google Drive retornou erro %ld: %s", httpCode, response.c_str());
+        Logger::logSync("[%016llX] Google Drive API: HTTP %ld (Error: %s)",
+                        (unsigned long long)titleId, httpCode, apiErr.c_str());
         return false;
     }
+
+    std::string retFileId = extractJsonString(response, "id");
+    if (retFileId.empty() && isUpdate) {
+        retFileId = existingFileId;
+    }
+
+    Logger::logSync("[%016llX] Google Drive API: HTTP %ld (File ID: %s, Action: %s)",
+                    (unsigned long long)titleId, httpCode, retFileId.c_str(), isUpdate ? "PATCH" : "POST");
 
     // Remove o zip temporario apenas apos confirmacao de sucesso HTTP 2xx
     remove(zipPath.c_str());
@@ -693,6 +725,7 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     logClient("[UPLOAD] Upload concluido com sucesso para titleId 0x%016llX (%s)",
               (unsigned long long)titleId, isUpdate ? "PATCH" : "POST");
     return true;
+}
 }
 
 static size_t curlFileWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {

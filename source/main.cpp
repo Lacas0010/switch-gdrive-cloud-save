@@ -11,6 +11,7 @@
 #include "SaveManager.hpp"
 #include "ZipHelper.hpp"
 #include "GDriveClient.hpp"
+#include "Logger.hpp"
 
 // 1. Subsistema e ciclo de vida canonico de Sysmodule para libnx / Atmosphere
 extern "C" {
@@ -239,25 +240,28 @@ int main(int argc, char* argv[]) {
         // 2. Monitoramento de Jogos e Backup de Saves
         u64 closedTitleId = 0;
         if (s_pmdmntReady && s_pminfoReady && monitor.hasGameJustExited(closedTitleId)) {
+            Logger::logSync("[%016llX] Process terminated", (unsigned long long)closedTitleId);
             logSysmodule("[EVENT] Jogo fechado detectado: 0x%016llX", (unsigned long long)closedTitleId);
 
-            // Aguarda 500ms para que o Horizon OS desmonte o processo e libere travas de arquivos de save
-            svcSleepThread(500'000'000ULL);
+            // Aguarda 3.5 segundos para que o Horizon OS descarregue o cache e libere travas de arquivos de save
+            svcSleepThread(3'500'000'000ULL);
 
             // Verifica se o jogo esta autorizado no modo whitelist
             if (!gdrive.isTitleTracked(closedTitleId)) {
+                Logger::logSync("[%016llX] Game ignored by whitelist.", (unsigned long long)closedTitleId);
                 logSysmodule("[FILTER] Jogo 0x%016llX ignorado pelo modo whitelist.", (unsigned long long)closedTitleId);
             } else {
                 // Um jogo foi fechado. Verifica se ha conta de usuario ativa
                 AccountUid uid{};
                 if (!saveManager.getActiveAccount(uid)) {
+                    Logger::logSync("[%016llX] FAILED: Could not obtain active user account.", (unsigned long long)closedTitleId);
                     logSysmodule("[ERROR] Nao foi possivel obter usuario ativo para save 0x%016llX", (unsigned long long)closedTitleId);
                 } else {
                     logSysmodule("[SAVE] Lendo e compactando save de 0x%016llX...", (unsigned long long)closedTitleId);
                     std::string zipPath;
                     bool changed = false;
 
-                    // Processa e compacta o save
+                    // Processa e compacta o save (com retry loop interno caso a particao esteja busy)
                     if (!saveManager.processGameSave(closedTitleId, uid, zipPath, changed)) {
                         logSysmodule("[ERROR] Falha ao ler ou compactar save de 0x%016llX", (unsigned long long)closedTitleId);
                     } else if (!changed) {
@@ -293,6 +297,8 @@ int main(int argc, char* argv[]) {
                                 s_pendingSaves.push_back({closedTitleId, zipPath, newCrc});
                             }
                         } else {
+                            Logger::logSync("[%016llX] Wi-Fi not connected after 60s (LDN/offline). Enqueuing save to pending list.",
+                                            (unsigned long long)closedTitleId);
                             logSysmodule("[WARN] Sem Wi-Fi apos fechar 0x%016llX (LDN/offline). Enfileirando para envio posterior...",
                                          (unsigned long long)closedTitleId);
                             s_pendingSaves.push_back({closedTitleId, zipPath, newCrc});

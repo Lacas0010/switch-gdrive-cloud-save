@@ -11,6 +11,7 @@ namespace Config {
     inline const std::string TEMP_DIR            = "sdmc:/config/gdrive-sync/temp";
     inline const std::string BACKUP_DIR          = "sdmc:/config/gdrive-sync/backups";
     inline const std::string TIMESTAMPS_FILE     = "sdmc:/config/gdrive-sync/timestamps.json";
+    inline const std::string SYNC_LOG_FILE       = "sdmc:/config/gdrive-sync/sync.log";
     inline const std::string CONFIG_FILE         = "sdmc:/config/gdrive-sync/config.json";
     inline const std::string AUTH_FILE           = "sdmc:/config/gdrive-sync/auth_request.txt";
     inline const std::string STATE_FILE          = "sdmc:/config/gdrive-sync/state.json";

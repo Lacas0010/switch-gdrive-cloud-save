@@ -63,7 +63,7 @@ namespace {
         uint32_t localOffset;
     };
 
-    constexpr size_t STREAM_BUFFER_SIZE = 16 * 1024; // Buffer enxuto de 16KB para sysmodule
+    constexpr size_t STREAM_BUFFER_SIZE = 32 * 1024; // Stream direto no SDMC com blocos de 32KB
 
     static void mkdirs(const std::string& path) {
         std::string cur;
