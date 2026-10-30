@@ -1,0 +1,71 @@
+#pragma once
+#include <switch.h>
+#include <string>
+
+class GDriveClient {
+public:
+    GDriveClient();
+    ~GDriveClient();
+
+    // Carrega credenciais e tokens salvos no SD
+    bool loadConfig();
+    bool saveConfig();
+
+    bool isConfigured() const { return !m_clientId.empty() && !m_clientSecret.empty(); }
+    bool isAuthorized() const { return !m_refreshToken.empty(); }
+
+    // Getters e Setters para manipulacao via GUI / Teclado
+    std::string getClientId() const { return m_clientId; }
+    void setClientId(const std::string& id) { m_clientId = id; }
+
+    std::string getClientSecret() const { return m_clientSecret; }
+    void setClientSecret(const std::string& secret) { m_clientSecret = secret; }
+
+    std::string getFolderName() const { return m_folderName; }
+    void setFolderName(const std::string& name) { m_folderName = name; }
+
+    std::string getFolderId() const { return m_folderId; }
+    void setFolderId(const std::string& id) { m_folderId = id; }
+
+    std::string getPendingUserCode() const { return m_pendingUserCode; }
+    std::string getPendingVerifyUrl() const { return m_pendingVerifyUrl; }
+
+    // Inicia fluxo OAuth2 Device Flow gravando auth_request.txt no SD
+    bool requestDeviceCode();
+
+    // Faz uma checagem de polling para ver se o usuario autorizou no navegador/celular
+    bool pollAuthorization();
+
+    // Renova o token de acesso de curta duracao
+    bool refreshAccessToken();
+
+    // Garante que a pasta destino exista no Google Drive (cria se necessario e salva folder_id)
+    std::string ensureFolderExists(const std::string& folderName = "");
+
+    // Busca se um arquivo com o nome informado ja existe dentro da pasta informada
+    std::string findFileInFolder(const std::string& fileName, const std::string& parentFolderId);
+
+    // Faz upload ou atualizacao (PATCH) do .zip do save sem duplicatas
+    bool uploadSaveArchive(u64 titleId, const std::string& zipPath);
+
+private:
+    std::string m_clientId;
+    std::string m_clientSecret;
+    std::string m_refreshToken;
+    std::string m_accessToken;
+    std::string m_folderId;
+    std::string m_folderName;
+
+    std::string m_pendingDeviceCode;
+    std::string m_pendingUserCode;
+    std::string m_pendingVerifyUrl;
+    u64         m_lastPollTime;
+    u32         m_pollIntervalSec;
+
+    // Metodos auxiliares REST via libcurl
+    std::string httpPost(const std::string& url, const std::string& postData, const std::string& authHeader = "");
+    std::string httpPatch(const std::string& url, const std::string& patchData, const std::string& authHeader = "");
+    std::string httpGet(const std::string& url, const std::string& authHeader);
+
+    static size_t curlWriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
+};

@@ -1,0 +1,24 @@
+{
+  "name": "CloudSaveSysmodule",
+  "title_id": "0x4200000000000010",
+  "title_type": "SystemProgram",
+  "main_thread_stack_size": "0x4000",
+  "main_thread_priority": 45,
+  "default_cpu_id": 3,
+  "process_category": "RegularTitle",
+  "service_access": [
+    "sm:",
+    "fspr:",
+    "fsp-srv",
+    "pm:dmnt",
+    "pm:info",
+    "nifm:u",
+    "bsd:u",
+    "bsd:s",
+    "set:sys",
+    "acc:u0"
+  ],
+  "fs_access": {
+    "SaveDataInfo": true
+  }
+}

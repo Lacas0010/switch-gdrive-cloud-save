@@ -1,0 +1,25 @@
+# Build artifacts
+build/
+gui/build/
+dist/
+exefs/
+*.elf
+*.nsp
+*.nro
+*.nso
+*.nacp
+*.map
+main.npdm
+
+# Secrets and credentials
+config.json
+*.pem
+auth_request.txt
+state.json
+*.tmp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+*.swp
+*.bak

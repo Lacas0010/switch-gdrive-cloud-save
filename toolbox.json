@@ -1,0 +1,9 @@
+{
+  "name": "Google Drive Cloud Save",
+  "tid": "4200000000000010",
+  "requires_reboot": false,
+  "title": "Cloud Save Daemon",
+  "author": "Antigravity Dev",
+  "version": "1.0.0",
+  "description": "Backup automatico de saves em background para o Google Drive."
+}
