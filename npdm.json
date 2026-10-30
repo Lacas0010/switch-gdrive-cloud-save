@@ -17,7 +17,7 @@
   "disable_device_address_space_merge": false,
   "enable_alias_region_extra_size": false,
   "prevent_code_reads": false,
-  "is_retail": true,
+  "is_retail": false,
   "pool_partition": 2,
   "is_64_bit": true,
   "address_space_type": 1,
