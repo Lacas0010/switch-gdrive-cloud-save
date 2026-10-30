@@ -52,7 +52,7 @@ bool startSysmodule(std::string& outMsg) {
     Result rc = pmshellLaunchProgram(0, &loc, &pid);
     if (R_FAILED(rc)) {
         char errBuf[128];
-        snprintf(errBuf, sizeof(errBuf), "Erro 0x%X (Abra via Title Override [R] ou use Auto-Boot)", rc);
+        snprintf(errBuf, sizeof(errBuf), "Erro 0x%X (Reinicie o Switch para carregar via boot2.flag)", rc);
         outMsg = errBuf;
         return false;
     }

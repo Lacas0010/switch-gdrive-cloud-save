@@ -69,10 +69,7 @@ gui-app:
 dist: all
 	@echo "Montando estrutura completa para o Cartao SD..."
 	@mkdir -p dist/atmosphere/contents/$(TITLE_ID)/flags
-	@mkdir -p dist/atmosphere/contents/$(TITLE_ID)/exefs
 	@cp $(OUTPUT).nsp dist/atmosphere/contents/$(TITLE_ID)/exefs.nsp
-	@cp $(TOPDIR)/exefs/main dist/atmosphere/contents/$(TITLE_ID)/exefs/main
-	@cp $(TOPDIR)/exefs/main.npdm dist/atmosphere/contents/$(TITLE_ID)/exefs/main.npdm
 	@cp $(TOPDIR)/toolbox.json dist/atmosphere/contents/$(TITLE_ID)/toolbox.json
 	@touch dist/atmosphere/contents/$(TITLE_ID)/flags/boot2.flag
 	@mkdir -p dist/switch/gdrive-sync
@@ -82,7 +79,6 @@ dist: all
 	@echo "=========================================================="
 	@echo " Pacote gerado com sucesso em ./dist/ :"
 	@echo "   - dist/atmosphere/contents/$(TITLE_ID)/exefs.nsp (Daemon)"
-	@echo "   - dist/atmosphere/contents/$(TITLE_ID)/exefs/ (Arquivos loose)"
 	@echo "   - dist/switch/gdrive-sync/gdrive-sync.nro (GUI)"
 	@echo "   - dist/config/gdrive-sync/ (Configuracoes)"
 	@echo "=========================================================="

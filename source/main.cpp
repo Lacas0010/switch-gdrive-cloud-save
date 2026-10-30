@@ -12,21 +12,18 @@
 // 1. Desativa subsistema grafico e de interface da libnx
 extern "C" {
     u32 __nx_applet_type = AppletType_None;
+    u32 __nx_fs_num_sessions = 1;
 
-    // 2. Heap restrito a exatamente 3MB para garantir compatibilidade com jogos pesados
-    #define INNER_HEAP_SIZE 0x300000 // 3 MiB
+    // 2. Heap estatico de 2MB no .bss (padrao canonico para sysmodules do Atmosphere)
+    #define INNER_HEAP_SIZE 0x200000 // 2 MiB
     
     void __libnx_initheap(void) {
-        void* addr = nullptr;
-        Result rc = svcSetHeapSize(&addr, INNER_HEAP_SIZE);
-        if (R_FAILED(rc)) {
-            return;
-        }
-
+        static u8 inner_heap[INNER_HEAP_SIZE];
         extern void* fake_heap_start;
         extern void* fake_heap_end;
-        fake_heap_start = addr;
-        fake_heap_end   = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(addr) + INNER_HEAP_SIZE);
+
+        fake_heap_start = inner_heap;
+        fake_heap_end   = inner_heap + sizeof(inner_heap);
     }
 }
 
