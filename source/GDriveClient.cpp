@@ -726,7 +726,6 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
               (unsigned long long)titleId, isUpdate ? "PATCH" : "POST");
     return true;
 }
-}
 
 static size_t curlFileWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     FILE* fp = static_cast<FILE*>(userp);
