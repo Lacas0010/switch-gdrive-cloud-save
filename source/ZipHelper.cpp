@@ -62,7 +62,7 @@ namespace {
         uint32_t localOffset;
     };
 
-    constexpr size_t STREAM_BUFFER_SIZE = 64 * 1024; // Buffer fixo de 64KB
+    constexpr size_t STREAM_BUFFER_SIZE = 16 * 1024; // Buffer enxuto de 16KB para sysmodule
 
     void listFilesRecursive(const std::string& baseDir, const std::string& subDir, std::vector<std::string>& fileList) {
         std::string fullDir = baseDir;

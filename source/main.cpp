@@ -17,8 +17,8 @@ extern "C" {
     u32 __nx_applet_type = AppletType_None;
     u32 __nx_fs_num_sessions = 1;
 
-    // 2. Heap estatico de 4MB no .bss (padrao canonico para sysmodules do Atmosphere)
-    #define INNER_HEAP_SIZE 0x400000 // 4 MiB
+    // 2. Heap estatico de 1.5MB no .bss (otimizado para conviver com multiplos sysmodules no System Pool)
+    #define INNER_HEAP_SIZE 0x180000 // 1.5 MiB
 
     void __libnx_initheap(void) {
         static u8 inner_heap[INNER_HEAP_SIZE];
@@ -47,7 +47,12 @@ extern "C" {
         if (R_FAILED(rc))
             diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_FS));
 
-        fsdevMountSdmc();
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            if (R_SUCCEEDED(fsdevMountSdmc())) {
+                break;
+            }
+            svcSleepThread(250'000'000ULL);
+        }
     }
 
     void __appExit(void) {
@@ -150,14 +155,6 @@ static void recoverPendingSavesFromDisk() {
 }
 
 int main(int argc, char* argv[]) {
-    // Garante que o cartao SD (sdmc:/) esteja montado com resiliencia para o boot2
-    for (int attempt = 0; attempt < 30; ++attempt) {
-        if (R_SUCCEEDED(fsdevMountSdmc())) {
-            break;
-        }
-        svcSleepThread(500'000'000ULL); // 500ms
-    }
-
     // Garante que a estrutura de pastas no SD exista
     Config::ensureDirectories();
     logSysmodule("[BOOT] Sysmodule CloudSave iniciado!");

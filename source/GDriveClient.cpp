@@ -594,11 +594,13 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
 
     fwrite(metadata.data(), 1, metadata.size(), streamFile);
 
-    constexpr size_t BUF_SIZE = 64 * 1024;
-    std::vector<unsigned char> buffer(BUF_SIZE);
-    size_t readBytes = 0;
-    while ((readBytes = fread(buffer.data(), 1, BUF_SIZE, fd)) > 0) {
-        fwrite(buffer.data(), 1, readBytes, streamFile);
+    {
+        constexpr size_t BUF_SIZE = 16 * 1024;
+        std::vector<unsigned char> buffer(BUF_SIZE);
+        size_t readBytes = 0;
+        while ((readBytes = fread(buffer.data(), 1, BUF_SIZE, fd)) > 0) {
+            fwrite(buffer.data(), 1, readBytes, streamFile);
+        }
     }
     fclose(fd);
 
