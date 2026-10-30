@@ -690,4 +690,3 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
               (unsigned long long)titleId, isUpdate ? "PATCH" : "POST");
     return true;
 }
-}
