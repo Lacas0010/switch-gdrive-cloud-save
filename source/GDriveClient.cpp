@@ -694,3 +694,152 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
               (unsigned long long)titleId, isUpdate ? "PATCH" : "POST");
     return true;
 }
+
+static size_t curlFileWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    FILE* fp = static_cast<FILE*>(userp);
+    return fwrite(contents, size, nmemb, fp);
+}
+
+std::time_t GDriveClient::parseIso8601ToUnixTime(const std::string& iso) {
+    int year = 0, month = 0, day = 0, hour = 0, min = 0, sec = 0;
+    if (sscanf(iso.c_str(), "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &min, &sec) < 6) {
+        return 0;
+    }
+    static const int daysBeforeMonth[] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+    int y = year - 1970;
+    int leapYears = (year - 1969) / 4 - (year - 1901) / 100 + (year - 1601) / 400;
+    bool isCurrentLeap = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0));
+    int days = y * 365 + leapYears + daysBeforeMonth[month - 1] + (day - 1);
+    if (isCurrentLeap && month > 2) {
+        days += 1;
+    }
+    return (std::time_t)days * 86400 + (std::time_t)hour * 3600 + (std::time_t)min * 60 + sec;
+}
+
+std::vector<DriveFileInfo> GDriveClient::listDriveSaves(std::string* outError) {
+    std::vector<DriveFileInfo> results;
+    if (!refreshAccessToken(outError)) {
+        return results;
+    }
+
+    std::string folderId = ensureFolderExists(m_folderName);
+    if (folderId.empty()) {
+        if (outError) *outError = "Pasta de saves no Drive nao encontrada";
+        return results;
+    }
+
+    std::string rawQuery = "'" + folderId + "' in parents and trashed = false";
+    std::string url = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) +
+                      "&fields=" + urlEncode("files(id,name,modifiedTime,size)") + "&pageSize=100";
+
+    std::string jsonResponse = httpGet(url, m_accessToken);
+    if (jsonResponse.empty()) {
+        if (outError) *outError = "Sem resposta da API do Google Drive";
+        return results;
+    }
+
+    size_t filesPos = jsonResponse.find("\"files\"");
+    if (filesPos == std::string::npos) {
+        return results;
+    }
+
+    size_t arrayStart = jsonResponse.find('[', filesPos);
+    size_t arrayEnd = jsonResponse.rfind(']');
+    if (arrayStart == std::string::npos || arrayEnd == std::string::npos) {
+        return results;
+    }
+
+    size_t cur = arrayStart;
+    while ((cur = jsonResponse.find('{', cur)) != std::string::npos && cur < arrayEnd) {
+        size_t objEnd = jsonResponse.find('}', cur);
+        if (objEnd == std::string::npos || objEnd > arrayEnd) break;
+
+        std::string obj = jsonResponse.substr(cur, objEnd - cur + 1);
+        DriveFileInfo info;
+        info.id = extractJsonString(obj, "id");
+        info.name = extractJsonString(obj, "name");
+        std::string modTimeStr = extractJsonString(obj, "modifiedTime");
+        info.modifiedTime = parseIso8601ToUnixTime(modTimeStr);
+
+        std::string sizeStr = extractJsonString(obj, "size");
+        if (!sizeStr.empty()) {
+            info.size = static_cast<size_t>(strtoull(sizeStr.c_str(), nullptr, 10));
+        }
+
+        unsigned long long tid = 0;
+        if (sscanf(info.name.c_str(), "save_%llx.zip", &tid) == 1 ||
+            sscanf(info.name.c_str(), "save_%llX.zip", &tid) == 1) {
+            info.titleId = tid;
+        }
+
+        if (!info.id.empty() && !info.name.empty()) {
+            results.push_back(info);
+        }
+
+        cur = objEnd + 1;
+    }
+
+    return results;
+}
+
+bool GDriveClient::downloadFile(const std::string& fileId, const std::string& destinationPath, std::string* outError) {
+    if (!refreshAccessToken(outError)) {
+        return false;
+    }
+
+    FILE* fp = fopen(destinationPath.c_str(), "wb");
+    if (!fp) {
+        if (outError) *outError = "Falha ao criar arquivo local: " + destinationPath;
+        logClient("[DOWNLOAD] fopen falhou para %s", destinationPath.c_str());
+        return false;
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        fclose(fp);
+        remove(destinationPath.c_str());
+        if (outError) *outError = "Falha ao inicializar cURL";
+        return false;
+    }
+
+    std::string url = "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media";
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + m_accessToken).c_str());
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlFileWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_CAINFO, Config::getCaBundlePath().c_str());
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 600L); // 10 minutos
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+
+    CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    fclose(fp);
+
+    if (res != CURLE_OK) {
+        remove(destinationPath.c_str());
+        std::string err = curl_easy_strerror(res);
+        if (outError) *outError = "curl: " + err;
+        logClient("[DOWNLOAD] curl falhou (code %d): %s", res, err.c_str());
+        return false;
+    }
+
+    if (httpCode < 200 || httpCode >= 300) {
+        remove(destinationPath.c_str());
+        if (outError) *outError = "HTTP " + std::to_string(httpCode);
+        logClient("[DOWNLOAD] HTTP code invalido: %ld", httpCode);
+        return false;
+    }
+
+    logClient("[DOWNLOAD] Arquivo baixado com sucesso: %s", destinationPath.c_str());
+    return true;
+}

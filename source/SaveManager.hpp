@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <ctime>
 
 struct GameSaveInfo {
     u64 titleId = 0;
@@ -29,8 +30,24 @@ public:
     // Atualiza o estado salvo apos o upload com sucesso
     void markSaveUploaded(u64 titleId, u32 crc);
 
+    // Obtem o timestamp Unix UTC da versao local do save (via timestamps.json ou stat de save:/)
+    std::time_t getLocalSaveTimestamp(u64 titleId, AccountUid uid);
+
+    // Define o timestamp local para o jogo e persiste em timestamps.json
+    void setLocalSaveTimestamp(u64 titleId, std::time_t ts);
+
+    // Restaura o save a partir de um .zip baixado:
+    // Faz backup de seguranca do save local atual para sdmc:/config/gdrive-sync/backups/<TitleID>_backup.zip,
+    // limpa save:/, descompacta o .zip baixado, executa commit obrigatorio e desmonta save:/.
+    bool restoreGameSave(u64 titleId, AccountUid uid, const std::string& zipPath, std::string* outError = nullptr);
+
+    // Gerenciamento de timestamps locais
+    void loadTimestamps();
+    void saveTimestamps();
+
 private:
     std::map<u64, u32> m_savedCrcs;
+    std::map<u64, std::time_t> m_timestamps;
 
     void loadState();
     void saveState();

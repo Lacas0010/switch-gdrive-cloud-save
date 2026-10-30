@@ -2,6 +2,15 @@
 #include <switch.h>
 #include <string>
 #include <vector>
+#include <ctime>
+
+struct DriveFileInfo {
+    std::string id;
+    std::string name;
+    u64 titleId = 0;
+    std::time_t modifiedTime = 0; // Unix Epoch UTC em segundos
+    size_t size = 0;
+};
 
 class GDriveClient {
 public:
@@ -56,6 +65,15 @@ public:
 
     // Faz upload ou atualizacao (PATCH) do .zip do save sem duplicatas
     bool uploadSaveArchive(u64 titleId, const std::string& zipPath, std::string* outError = nullptr);
+
+    // Lista os saves existentes na pasta do Google Drive com timestamps e metadados
+    std::vector<DriveFileInfo> listDriveSaves(std::string* outError = nullptr);
+
+    // Baixa o arquivo do Google Drive diretamente para o arquivo destinationPath no SD
+    bool downloadFile(const std::string& fileId, const std::string& destinationPath, std::string* outError = nullptr);
+
+    // Converte timestamp ISO 8601 UTC (ex: "2026-10-30T21:40:00.000Z") para std::time_t
+    static std::time_t parseIso8601ToUnixTime(const std::string& isoStr);
 
 private:
     std::string m_clientId;

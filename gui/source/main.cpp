@@ -400,6 +400,234 @@ void processUploadBatch(Gfx::Display& display,
 }
 
 // ==============================================================================
+// ROTINA DE DOWNLOAD / RESTAURACAO INTELIGENTE (Drive -> Console)
+// Baixa exclusivamente se Timestamp_Drive > Timestamp_Local
+// ==============================================================================
+void processDownloadBatch(Gfx::Display& display,
+                          SaveManager& saveManager,
+                          GDriveClient& client,
+                          AccountUid uid,
+                          PadState& pad) {
+    auto showLoading = [&](const std::string& msg) {
+        if (display.beginFrame()) {
+            display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+            int mx = 200, my = 200, mw = 880, mh = 260;
+            display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+            display.drawRoundedRectOutline(mx, my, mw, mh, 16, Gfx::Colors::JOYCON_CYAN, 2);
+            display.drawCloudSaveIcon(mx + 50, my + 50, 36, Gfx::Colors::JOYCON_CYAN);
+            display.drawText(mx + 95, my + 35, "ATUALIZAR DO GOOGLE DRIVE", Gfx::Colors::TEXT_WHITE, 2, true);
+            display.drawText(mx + 95, my + 68, "Buscando versoes mais recentes na nuvem", Gfx::Colors::TEXT_MUTED, 1);
+            display.fillRect(mx + 30, my + 105, mw - 60, 2, Gfx::Colors::CARD_OUTLINE);
+            display.drawText(mx + 50, my + 145, msg, Gfx::Colors::JOYCON_CYAN, 1, true);
+            display.endFrame();
+        }
+    };
+
+    showLoading("Conectando ao Google Drive e listando arquivos...");
+
+    std::string listErr;
+    std::vector<DriveFileInfo> driveFiles = client.listDriveSaves(&listErr);
+
+    if (driveFiles.empty()) {
+        std::string errText = listErr.empty() ? "Nenhum save encontrado na pasta do Google Drive." : listErr;
+        while (appletMainLoop()) {
+            padUpdate(&pad);
+            u64 k = padGetButtonsDown(&pad);
+            if (k & (HidNpadButton_A | HidNpadButton_B)) break;
+
+            if (display.beginFrame()) {
+                display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+                int mx = 250, my = 200, mw = 780, mh = 260;
+                display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+                display.drawRoundedRectOutline(mx, my, mw, mh, 16, Gfx::Colors::JOYCON_RED, 2);
+                display.drawText(mx + 40, my + 40, "NENHUM SAVE NO DRIVE", Gfx::Colors::TEXT_WHITE, 2, true);
+                display.drawText(mx + 40, my + 80, errText, Gfx::Colors::TEXT_MUTED, 1);
+                display.drawControllerButtonBadge(mx + mw - 160, my + mh - 50, "B", Gfx::Colors::JOYCON_GRAY);
+                display.drawText(mx + mw - 130, my + mh - 46, "Voltar", Gfx::Colors::TEXT_WHITE, 1);
+                display.endFrame();
+            }
+            svcSleepThread(16'000'000ULL);
+        }
+        return;
+    }
+
+    std::map<u64, std::string> nameMap;
+    std::vector<GameSaveInfo> installed = saveManager.listAvailableSaves(uid);
+    for (const auto& item : installed) {
+        nameMap[item.titleId] = item.titleName;
+    }
+
+    int total = static_cast<int>(driveFiles.size());
+    int restoredCount = 0;
+    int ignoredCount = 0;
+    int errorCount = 0;
+    std::vector<std::string> summaryLogs;
+
+    auto formatTimestamp = [](std::time_t ts) -> std::string {
+        if (ts <= 0) return "Nao registrado / 0";
+        struct tm* tmInfo = std::gmtime(&ts);
+        if (!tmInfo) return "Desconhecido";
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d UTC",
+                 tmInfo->tm_mday, tmInfo->tm_mon + 1, tmInfo->tm_year + 1900,
+                 tmInfo->tm_hour, tmInfo->tm_min);
+        return buf;
+    };
+
+    for (int idx = 0; idx < total; ++idx) {
+        const auto& file = driveFiles[idx];
+        u64 tid = file.titleId;
+        std::string gameName;
+        auto nit = nameMap.find(tid);
+        if (nit != nameMap.end() && !nit->second.empty()) {
+            gameName = nit->second;
+        } else {
+            char tidBuf[32];
+            snprintf(tidBuf, sizeof(tidBuf), "0x%016llX", (unsigned long long)tid);
+            gameName = tidBuf;
+        }
+
+        std::time_t driveTs = file.modifiedTime;
+        std::time_t localTs = saveManager.getLocalSaveTimestamp(tid, uid);
+
+        std::string driveTsStr = formatTimestamp(driveTs);
+        std::string localTsStr = formatTimestamp(localTs);
+
+        auto renderStep = [&](const std::string& actionMsg, float fraction, u32 actionColor) {
+            if (display.beginFrame()) {
+                display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+
+                int mx = 180, my = 120, mw = 920, mh = 470;
+                display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+                display.drawRoundedRectOutline(mx, my, mw, mh, 16, Gfx::Colors::JOYCON_CYAN, 2);
+
+                display.drawCloudSaveIcon(mx + 45, my + 45, 36, Gfx::Colors::JOYCON_CYAN);
+                char headerBuf[128];
+                snprintf(headerBuf, sizeof(headerBuf), "ANALISANDO SAVE [%d/%d]", idx + 1, total);
+                display.drawText(mx + 90, my + 30, headerBuf, Gfx::Colors::TEXT_WHITE, 2, true);
+                display.drawText(mx + 90, my + 64, "Comparando versao do Google Drive com o console", Gfx::Colors::TEXT_MUTED, 1);
+
+                display.fillRect(mx + 30, my + 95, mw - 60, 2, Gfx::Colors::CARD_OUTLINE);
+
+                int ty = my + 120;
+                display.drawText(mx + 45, ty, "Jogo:", Gfx::Colors::TEXT_MUTED, 1);
+                display.drawText(mx + 105, ty, gameName, Gfx::Colors::JOYCON_CYAN, 2, true);
+
+                ty += 40;
+                char tidBuf[64];
+                snprintf(tidBuf, sizeof(tidBuf), "Title ID: 0x%016llX", (unsigned long long)tid);
+                display.drawText(mx + 45, ty, tidBuf, Gfx::Colors::TEXT_MUTED, 1);
+
+                ty += 30;
+                display.drawText(mx + 45, ty, "Data no Drive (Nuvem): " + driveTsStr, Gfx::Colors::TEXT_WHITE, 1);
+                ty += 24;
+                display.drawText(mx + 45, ty, "Data Local (Switch):   " + localTsStr, Gfx::Colors::TEXT_WHITE, 1);
+
+                ty += 35;
+                display.drawText(mx + 45, ty, "Status: " + actionMsg, actionColor, 1, true);
+
+                // Barra de progresso
+                int barX = mx + 45, barY = my + 335, barW = mw - 90, barH = 18;
+                display.fillRoundedRect(barX, barY, barW, barH, 9, Gfx::Colors::CARD_OUTLINE);
+                int fillW = std::clamp(static_cast<int>(barW * fraction), 18, barW);
+                display.fillRoundedRect(barX, barY, fillW, barH, 9, Gfx::Colors::STATUS_GREEN);
+
+                char pctBuf[32];
+                snprintf(pctBuf, sizeof(pctBuf), "%d%%", static_cast<int>(fraction * 100.0f));
+                display.drawText(barX + barW + 15, barY + 1, pctBuf, Gfx::Colors::TEXT_WHITE, 1);
+
+                display.drawText(mx + 45, my + 395, "Por favor, aguarde e nao desligue o console.", Gfx::Colors::TEXT_MUTED, 1);
+
+                display.endFrame();
+            }
+        };
+
+        float baseFrac = static_cast<float>(idx) / total;
+        float nextFrac = static_cast<float>(idx + 1) / total;
+
+        if (driveTs > localTs) {
+            renderStep("Baixando versao mais recente: " + gameName + "...", baseFrac + 0.3f / total, Gfx::Colors::DRIVE_YELLOW);
+
+            std::string tempZip = Config::TEMP_DIR + "/restore.zip";
+            remove(tempZip.c_str());
+
+            std::string dlErr;
+            bool dlOk = client.downloadFile(file.id, tempZip, &dlErr);
+            if (!dlOk) {
+                errorCount++;
+                summaryLogs.push_back(gameName + ": Falha download (" + dlErr + ")");
+                continue;
+            }
+
+            renderStep("Restaurando save e persistindo no console...", baseFrac + 0.7f / total, Gfx::Colors::JOYCON_CYAN);
+
+            std::string resErr;
+            bool resOk = saveManager.restoreGameSave(tid, uid, tempZip, &resErr);
+            remove(tempZip.c_str());
+
+            if (resOk) {
+                saveManager.setLocalSaveTimestamp(tid, driveTs);
+                restoredCount++;
+                summaryLogs.push_back(gameName + ": Restaurado com sucesso!");
+            } else {
+                errorCount++;
+                summaryLogs.push_back(gameName + ": Erro gravacao (" + resErr + ")");
+            }
+        } else {
+            ignoredCount++;
+            summaryLogs.push_back(gameName + ": Ignorado (Local atualizado)");
+            renderStep("Ignorado (Local ja esta atualizado ou mais recente).", nextFrac, Gfx::Colors::TEXT_MUTED);
+            svcSleepThread(100'000'000ULL);
+        }
+    }
+
+    // Modal de Resumo Final
+    while (appletMainLoop()) {
+        padUpdate(&pad);
+        u64 kDown = padGetButtonsDown(&pad);
+        if (kDown & (HidNpadButton_A | HidNpadButton_B)) break;
+
+        if (display.beginFrame()) {
+            display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+
+            int mx = 180, my = 100, mw = 920, mh = 510;
+            display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+            display.drawRoundedRectOutline(mx, my, mw, mh, 16, Gfx::Colors::JOYCON_CYAN, 2);
+
+            display.drawCloudSaveIcon(mx + 45, my + 45, 36, Gfx::Colors::JOYCON_CYAN);
+            display.drawText(mx + 90, my + 30, "RESUMO DA SINCRONIZACAO DO DRIVE", Gfx::Colors::TEXT_WHITE, 2, true);
+            display.drawText(mx + 90, my + 64, "Relatorio de restauracao e comparacao de versoes", Gfx::Colors::TEXT_MUTED, 1);
+
+            display.fillRect(mx + 30, my + 95, mw - 60, 2, Gfx::Colors::CARD_OUTLINE);
+
+            int ty = my + 115;
+            display.drawText(mx + 45, ty, "Total de Jogos no Drive Analisados: " + std::to_string(total), Gfx::Colors::TEXT_WHITE, 1, true);
+            ty += 28;
+            display.drawText(mx + 45, ty, "Saves Baixados e Restaurados (Nuvem mais recente): " + std::to_string(restoredCount), Gfx::Colors::STATUS_GREEN, 1, true);
+            ty += 28;
+            display.drawText(mx + 45, ty, "Saves Ignorados (Local ja atualizado ou mais recente): " + std::to_string(ignoredCount), Gfx::Colors::JOYCON_CYAN, 1);
+            ty += 28;
+            display.drawText(mx + 45, ty, "Erros / Falhas: " + std::to_string(errorCount), (errorCount > 0) ? Gfx::Colors::STATUS_RED : Gfx::Colors::TEXT_MUTED, 1, true);
+
+            ty += 35;
+            display.drawText(mx + 45, ty, "Historico por Jogo:", Gfx::Colors::TEXT_MUTED, 1, true);
+            ty += 22;
+            for (size_t i = 0; i < summaryLogs.size() && i < 6; ++i) {
+                display.drawText(mx + 60, ty, "• " + summaryLogs[i], Gfx::Colors::TEXT_WHITE, 1);
+                ty += 22;
+            }
+
+            int btnY = my + mh - 50;
+            display.drawControllerButtonBadge(mx + mw - 180, btnY, "A", Gfx::Colors::JOYCON_RED);
+            display.drawText(mx + mw - 150, btnY + 4, "Continuar", Gfx::Colors::TEXT_WHITE, 1);
+
+            display.endFrame();
+        }
+        svcSleepThread(16'000'000ULL);
+    }
+}
+
+// ==============================================================================
 // MODAL: SELECIONAR JOGOS PARA SINCRONIZAR
 // ==============================================================================
 void runSelectGamesModal(Gfx::Display& display,
@@ -667,7 +895,7 @@ int main(int argc, char* argv[]) {
     SaveManager saveManager;
 
     int selectedItem = 0;
-    constexpr int TOTAL_MENU_ITEMS = 9;
+    constexpr int TOTAL_MENU_ITEMS = 10;
     std::string toastMessage = "Pronto! Selecione uma opcao para iniciar.";
     u32 toastColor = Gfx::Colors::STATUS_GREEN;
 
@@ -814,7 +1042,28 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 4: { // Selecionar Jogos para Sincronizar
+                case 4: { // Atualizar do Drive (Baixar se Nuvem for Mais Recente)
+                    if (!client.isAuthorized()) {
+                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
+                        toastColor   = Gfx::Colors::STATUS_YELLOW;
+                    } else if (!wifiActive) {
+                        toastMessage = "Erro: Sem conexao com a internet!";
+                        toastColor   = Gfx::Colors::STATUS_RED;
+                    } else {
+                        AccountUid uid{};
+                        if (!saveManager.getActiveAccount(uid)) {
+                            toastMessage = "Erro: Nenhuma conta de usuario ativa encontrada no Switch.";
+                            toastColor   = Gfx::Colors::STATUS_RED;
+                        } else {
+                            processDownloadBatch(display, saveManager, client, uid, pad);
+                            toastMessage = "Verificacao e download do Drive concluidos!";
+                            toastColor   = Gfx::Colors::STATUS_GREEN;
+                        }
+                    }
+                    break;
+                }
+
+                case 5: { // Selecionar Jogos para Sincronizar
                     if (!client.isAuthorized()) {
                         toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
                         toastColor   = Gfx::Colors::STATUS_YELLOW;
@@ -832,7 +1081,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 5: { // Validar/Criar Pasta
+                case 6: { // Validar/Criar Pasta
                     if (!client.isAuthorized()) {
                         toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
                         toastColor   = Gfx::Colors::STATUS_YELLOW;
@@ -853,7 +1102,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 6: { // Editar Client ID
+                case 7: { // Editar Client ID
                     std::string newId = showKeyboard("Digite o Google OAuth Client ID", client.getClientId());
                     client.setClientId(newId);
                     client.saveConfig();
@@ -862,7 +1111,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 7: { // Editar Client Secret
+                case 8: { // Editar Client Secret
                     std::string newSec = showKeyboard("Digite o Google OAuth Client Secret", client.getClientSecret());
                     client.setClientSecret(newSec);
                     client.saveConfig();
@@ -871,7 +1120,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 8: { // Editar Nome da Pasta
+                case 9: { // Editar Nome da Pasta
                     std::string newFolder = showKeyboard("Nome da pasta de saves no Google Drive", client.getFolderName());
                     client.setFolderName(newFolder);
                     client.saveConfig();
@@ -986,11 +1235,11 @@ int main(int argc, char* argv[]) {
 
             // 4. Coluna Direita: Menu de Ações Interativo
             int rightColX = 495, rightColW = 755;
-            int menuBoxY = 90, menuBoxH = 540;
+            int menuBoxY = 80, menuBoxH = 568;
             display.fillRoundedRect(rightColX, menuBoxY, rightColW, menuBoxH, 14, Gfx::Colors::HEADER_BG);
             display.drawRoundedRectOutline(rightColX, menuBoxY, rightColW, menuBoxH, 14, Gfx::Colors::CARD_OUTLINE, 1);
 
-            display.drawText(rightColX + 24, menuBoxY + 18, "ACOES E CONFIGURACOES", Gfx::Colors::TEXT_MUTED, 1, true);
+            display.drawText(rightColX + 24, menuBoxY + 12, "ACOES E CONFIGURACOES", Gfx::Colors::TEXT_MUTED, 1, true);
 
             struct MenuItem {
                 const char* title;
@@ -1002,6 +1251,7 @@ int main(int argc, char* argv[]) {
                 {"Iniciar / Parar Sysmodule em Segundo Plano", "Alterna o processo daemon de monitoramento de saves"},
                 {"Alternar Inicializacao no Boot (boot2.flag)",  "Inicia automaticamente o daemon toda vez que ligar o Switch"},
                 {"Subir Todos os Saves Agora (Upload em Lote)",  "Compacta e envia todos os saves do usuario ativo para o Drive"},
+                {"Atualizar do Drive (Baixar se Nuvem for Mais Recente)", "Verifica e baixa saves da nuvem estritamente mais recentes"},
                 {"Selecionar Jogos para Sincronizar",          "Lista os jogos para marcar quais enviar ou salvar como padrao"},
                 {"Validar / Criar Pasta de Saves no Google Drive", "Testa a conexao com a API e assegura a pasta destino"},
                 {"Configurar Google OAuth Client ID",           "Insira a chave Client ID usando o teclado virtual Horizon"},
@@ -1009,8 +1259,8 @@ int main(int argc, char* argv[]) {
                 {"Alterar Nome da Pasta de Destino no Drive",    "Altere o nome da pasta principal de backup no Drive"}
             };
 
-            int itemY = menuBoxY + 36;
-            int itemH = 46;
+            int itemY = menuBoxY + 30;
+            int itemH = 43;
 
             for (int i = 0; i < TOTAL_MENU_ITEMS; i++) {
                 bool isSelected = (i == selectedItem);
@@ -1022,28 +1272,28 @@ int main(int argc, char* argv[]) {
                     display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_HOVER_OUT, 2);
 
                     // Indicador de seleção
-                    display.fillRoundedRect(cardX + 4, itemY + 6, 4, itemH - 12, 2, Gfx::Colors::JOYCON_CYAN);
+                    display.fillRoundedRect(cardX + 4, itemY + 5, 4, itemH - 10, 2, Gfx::Colors::JOYCON_CYAN);
 
                     // Título e Descrição
-                    display.drawText(cardX + 20, itemY + 7, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1, true);
-                    display.drawText(cardX + 20, itemY + 26, menuItems[i].desc, Gfx::Colors::JOYCON_CYAN, 1);
+                    display.drawText(cardX + 20, itemY + 6, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1, true);
+                    display.drawText(cardX + 20, itemY + 23, menuItems[i].desc, Gfx::Colors::JOYCON_CYAN, 1);
                 } else {
                     display.fillRoundedRect(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_BG);
                     display.drawRoundedRectOutline(cardX, itemY, cardW, itemH, 8, Gfx::Colors::CARD_OUTLINE, 1);
 
-                    display.drawText(cardX + 20, itemY + 7, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1);
-                    display.drawText(cardX + 20, itemY + 26, menuItems[i].desc, Gfx::Colors::TEXT_MUTED, 1);
+                    display.drawText(cardX + 20, itemY + 6, menuItems[i].title, Gfx::Colors::TEXT_WHITE, 1);
+                    display.drawText(cardX + 20, itemY + 23, menuItems[i].desc, Gfx::Colors::TEXT_MUTED, 1);
                 }
 
-                itemY += itemH + 6;
+                itemY += itemH + 5;
             }
 
             // Barra de Notificação / Toast no fundo da coluna direita
-            int toastY = menuBoxY + menuBoxH - 62;
-            display.fillRoundedRect(rightColX + 16, toastY, rightColW - 32, 46, 8, Gfx::Colors::CARD_BG);
-            display.drawRoundedRectOutline(rightColX + 16, toastY, rightColW - 32, 46, 8, toastColor, 1);
-            display.fillCircle(rightColX + 36, toastY + 23, 6, toastColor);
-            display.drawText(rightColX + 54, toastY + 15, toastMessage, Gfx::Colors::TEXT_WHITE, 1, true);
+            int toastY = menuBoxY + menuBoxH - 48;
+            display.fillRoundedRect(rightColX + 16, toastY, rightColW - 32, 40, 8, Gfx::Colors::CARD_BG);
+            display.drawRoundedRectOutline(rightColX + 16, toastY, rightColW - 32, 40, 8, toastColor, 1);
+            display.fillCircle(rightColX + 36, toastY + 20, 6, toastColor);
+            display.drawText(rightColX + 54, toastY + 12, toastMessage, Gfx::Colors::TEXT_WHITE, 1, true);
 
             // 5. Barra Inferior de Legenda de Controles (Footer)
             int footerY = 665;

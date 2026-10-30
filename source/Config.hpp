@@ -9,6 +9,8 @@ namespace Config {
 
     inline const std::string BASE_DIR            = "sdmc:/config/gdrive-sync";
     inline const std::string TEMP_DIR            = "sdmc:/config/gdrive-sync/temp";
+    inline const std::string BACKUP_DIR          = "sdmc:/config/gdrive-sync/backups";
+    inline const std::string TIMESTAMPS_FILE     = "sdmc:/config/gdrive-sync/timestamps.json";
     inline const std::string CONFIG_FILE         = "sdmc:/config/gdrive-sync/config.json";
     inline const std::string AUTH_FILE           = "sdmc:/config/gdrive-sync/auth_request.txt";
     inline const std::string STATE_FILE          = "sdmc:/config/gdrive-sync/state.json";
@@ -23,6 +25,7 @@ namespace Config {
         mkdir("sdmc:/config", 0777);
         mkdir(BASE_DIR.c_str(), 0777);
         mkdir(TEMP_DIR.c_str(), 0777);
+        mkdir(BACKUP_DIR.c_str(), 0777);
     }
 
     inline std::string getCaBundlePath() {

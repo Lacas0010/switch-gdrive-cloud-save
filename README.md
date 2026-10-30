@@ -82,6 +82,12 @@ Esta versão traz melhorias substanciais de estabilidade, novas opções na inte
 8. **Upload por Streaming cURL:**
    - Implementação de `CURLOPT_READFUNCTION` com streaming contínuo de arquivo (`fopen`/`fread`), evitando sobrecarga de buffer na memória RAM e validando detalhadamente códigos de resposta HTTP.
 
+9. **Atualizar do Drive (Restauração Inteligente / Download se Nuvem for Mais Recente):**
+   - Novo botão dedicado no menu principal da interface Homebrew (.NRO).
+   - Compara o timestamp UTC (`modifiedTime`) de cada save na pasta do Google Drive com o timestamp local do save no console (`timestamps.json` ou data dos arquivos internos).
+   - Se `Timestamp_Drive > Timestamp_Local`: realiza o download do arquivo ZIP em chunks com barra de progresso, cria automaticamente uma cópia de segurança do save local atual em `sdmc:/config/gdrive-sync/backups/<TitleID>_backup.zip`, descompacta diretamente na partição `save:/` e executa `fsdevCommitDevice("save")` para persistência segura na memória interna/SD.
+   - Saves onde a versão local já é igual ou mais recente são ignorados automaticamente, com relatório detalhado exibido em um modal ao final da operação.
+
 ---
 
 ## 📦 Componentes da Suite
@@ -236,6 +242,7 @@ Abra o arquivo `sdmc:/config/gdrive-sync/config.json` em qualquer editor de text
 | **D-Pad / Analógico Cima/Baixo** | Navega entre as opções e configurações. |
 | **Botão (A)** | Seleciona a opção destacada ou abre o teclado para editar campos. |
 | **Opção "Subir Todos os Saves Agora"** | Compacta e envia todos os saves do usuário ativo em lote com barra de progresso. |
+| **Opção "Atualizar do Drive (Baixar se Nuvem for Mais Recente)"** | Compara timestamps e baixa/restaura da nuvem saves mais recentes com backup de segurança e commit. |
 | **Opção "Selecionar Jogos para Sincronizar"** | Abre a lista interativa de jogos com nomes reais para marcar e sincronizar. |
 | **Botão (X)** | Inicia ou encerra o Daemon em segundo plano. |
 | **Botão (Y)** | Ativa ou desativa o **Auto-Boot** no início do console (`boot2.flag`). |

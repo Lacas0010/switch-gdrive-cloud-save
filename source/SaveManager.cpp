@@ -7,10 +7,12 @@
 
 SaveManager::SaveManager() {
     loadState();
+    loadTimestamps();
 }
 
 SaveManager::~SaveManager() {
     saveState();
+    saveTimestamps();
 }
 
 bool SaveManager::getActiveAccount(AccountUid& outUid) {
@@ -232,8 +234,11 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
 }
 
 void SaveManager::markSaveUploaded(u64 titleId, u32 crc) {
-    m_savedCrcs[titleId] = crc;
+    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
+    m_savedCrcs[baseTitleId] = crc;
+    m_timestamps[baseTitleId] = std::time(nullptr);
     saveState();
+    saveTimestamps();
 }
 
 void SaveManager::loadState() {
@@ -260,4 +265,124 @@ void SaveManager::saveState() {
         fprintf(f, "%016llx:%08x\n", (unsigned long long)tid, crc);
     }
     fclose(f);
+}
+
+void SaveManager::loadTimestamps() {
+    m_timestamps.clear();
+    FILE* f = fopen(Config::TIMESTAMPS_FILE.c_str(), "r");
+    if (!f) return;
+
+    char line[128];
+    while (fgets(line, sizeof(line), f)) {
+        unsigned long long tid = 0;
+        long long ts = 0;
+        if (sscanf(line, " \"%llx\": %lld", &tid, &ts) == 2 ||
+            sscanf(line, " \"%llX\": %lld", &tid, &ts) == 2 ||
+            sscanf(line, "%llx:%lld", &tid, &ts) == 2) {
+            if (tid != 0) {
+                m_timestamps[tid] = static_cast<std::time_t>(ts);
+            }
+        }
+    }
+    fclose(f);
+}
+
+void SaveManager::saveTimestamps() {
+    FILE* f = fopen(Config::TIMESTAMPS_FILE.c_str(), "w");
+    if (!f) return;
+
+    fprintf(f, "{\n");
+    bool first = true;
+    for (const auto& [tid, ts] : m_timestamps) {
+        if (!first) fprintf(f, ",\n");
+        fprintf(f, "  \"%016llx\": %lld", (unsigned long long)tid, (long long)ts);
+        first = false;
+    }
+    fprintf(f, "\n}\n");
+    fclose(f);
+}
+
+std::time_t SaveManager::getLocalSaveTimestamp(u64 titleId, AccountUid uid) {
+    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
+    std::time_t recorded = 0;
+    auto it = m_timestamps.find(baseTitleId);
+    if (it != m_timestamps.end()) {
+        recorded = it->second;
+    }
+
+    std::time_t maxMtime = 0;
+    Result rc = fsdevMountSaveDataReadOnly("save", baseTitleId, uid);
+    if (R_SUCCEEDED(rc)) {
+        std::vector<std::string> fileList;
+        ZipHelper::listFilesRecursive("save:/", "", fileList);
+        for (const auto& rel : fileList) {
+            std::string full = "save:/" + rel;
+            struct stat st;
+            if (stat(full.c_str(), &st) == 0 && st.st_mtime > 0) {
+                if (st.st_mtime > maxMtime) {
+                    maxMtime = st.st_mtime;
+                }
+            }
+        }
+        fsdevUnmountDevice("save");
+    }
+
+    return std::max(recorded, maxMtime);
+}
+
+void SaveManager::setLocalSaveTimestamp(u64 titleId, std::time_t ts) {
+    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
+    m_timestamps[baseTitleId] = ts;
+    saveTimestamps();
+}
+
+bool SaveManager::restoreGameSave(u64 titleId, AccountUid uid, const std::string& zipPath, std::string* outError) {
+    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
+
+    // 1. Cria pasta de backups se nao existir
+    mkdir(Config::BACKUP_DIR.c_str(), 0777);
+    char backupPath[128];
+    snprintf(backupPath, sizeof(backupPath), "%s/%016llx_backup.zip", Config::BACKUP_DIR.c_str(), (unsigned long long)baseTitleId);
+
+    // 2. Backup de seguranca do save local atual (se existir)
+    if (R_SUCCEEDED(fsdevMountSaveDataReadOnly("save", baseTitleId, uid))) {
+        ZipHelper::zipDirectory("save:/", backupPath);
+        fsdevUnmountDevice("save");
+    }
+
+    // 3. Monta o save em modo escrita (read-write)
+    Result rc = fsdevMountSaveData("save", baseTitleId, uid);
+    if (R_FAILED(rc)) {
+        if (outError) *outError = "Falha ao montar particao de save para gravacao (rc=0x" + std::to_string(rc) + ")";
+        return false;
+    }
+
+    // 4. Limpa todo o conteudo de save:/
+    ZipHelper::cleanDirectory("save:/");
+
+    // 5. Descompacta o zip baixado para save:/
+    bool unzipOk = ZipHelper::unzipToDirectory(zipPath, "save:/");
+    if (!unzipOk) {
+        if (outError) *outError = "Falha ao descompactar os arquivos no save";
+        fsdevUnmountDevice("save");
+        return false;
+    }
+
+    // 6. Commit obrigatorio para persistir no cartao/NAND
+    rc = fsdevCommitDevice("save");
+    fsdevUnmountDevice("save");
+
+    if (R_FAILED(rc)) {
+        if (outError) *outError = "Falha ao persistir (commit) alteracoes no save";
+        return false;
+    }
+
+    // 7. Atualiza o CRC salvo para que o sysmodule nao re-envie o save restaurado
+    u32 newCrc = 0;
+    if (ZipHelper::calculateFileCrc32(zipPath, newCrc)) {
+        m_savedCrcs[baseTitleId] = newCrc;
+        saveState();
+    }
+
+    return true;
 }
