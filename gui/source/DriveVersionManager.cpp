@@ -93,3 +93,4 @@ std::vector<DriveSnapshotVersion> DriveVersionManager::listGameVersions(
 
     return versions;
 }
+

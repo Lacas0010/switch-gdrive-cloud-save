@@ -36,3 +36,4 @@ public:
     // Registra evento de restauracao em sdmc:/config/gdrive-sync/restore.log
     static void logRestoreEvent(u64 titleId, const std::string& message);
 };
+

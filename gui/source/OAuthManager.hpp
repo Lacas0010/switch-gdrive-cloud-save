@@ -39,3 +39,4 @@ public:
     // Salva os tokens recebidos no arquivo sdmc:/config/gdrive-sync/config.json
     static bool saveTokensToConfig(const std::string& refreshToken, const std::string& accessToken);
 };
+
