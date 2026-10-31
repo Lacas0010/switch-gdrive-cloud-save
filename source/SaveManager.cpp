@@ -11,17 +11,6 @@
 #include <algorithm>
 
 namespace {
-    static void logSys(const char* fmt, ...) {
-        FILE* f = fopen(Config::SYNC_LOG_FILE.c_str(), "a");
-        if (!f) return;
-        va_list args;
-        va_start(args, fmt);
-        vfprintf(f, fmt, args);
-        fprintf(f, "\n");
-        va_end(args);
-        fclose(f);
-    }
-
     static std::string extractJsonField(const std::string& json, const std::string& key) {
         std::string pattern = "\"" + key + "\"";
         size_t pos = json.find(pattern);
@@ -62,21 +51,19 @@ void SaveManager::Shutdown() {
 
 std::string SaveManager::formatUid(const AccountUid& uid) {
     char buf[33];
-    u64 hi = (u64)(uid.uid >> 64);
-    u64 lo = (u64)(uid.uid & 0xFFFFFFFFFFFFFFFFULL);
-    snprintf(buf, sizeof(buf), "%016llX%016llX", (unsigned long long)hi, (unsigned long long)lo);
+    snprintf(buf, sizeof(buf), "%016llX%016llX",
+             (unsigned long long)uid.uid[0],
+             (unsigned long long)uid.uid[1]);
     return std::string(buf);
 }
 
 AccountUid SaveManager::parseUid(const std::string& str) {
     AccountUid uid{};
     if (str.length() >= 32) {
-        unsigned long long hi = 0, lo = 0;
         std::string hiStr = str.substr(0, 16);
         std::string loStr = str.substr(16, 16);
-        hi = std::strtoull(hiStr.c_str(), nullptr, 16);
-        lo = std::strtoull(loStr.c_str(), nullptr, 16);
-        uid.uid = ((u128)hi << 64) | (u128)lo;
+        uid.uid[0] = std::strtoull(hiStr.c_str(), nullptr, 16);
+        uid.uid[1] = std::strtoull(loStr.c_str(), nullptr, 16);
     }
     return uid;
 }
