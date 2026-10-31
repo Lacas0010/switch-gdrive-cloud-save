@@ -16,6 +16,10 @@
   <img src="https://img.shields.io/badge/Interface-Nativa%20720p%2060FPS-FFAE00?style=for-the-badge" alt="Native 60FPS UI" />
 </p>
 
+<p align="center">
+  <img src="screenshot.jpg" alt="Interface Gráfica do Google Drive Cloud Save no Nintendo Switch" width="800" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+</p>
+
 ---
 
 ## 📌 Sumário
