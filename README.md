@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.5-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.5" />
+  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.6-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.6" />
   <img src="https://img.shields.io/badge/Plataforma-Nintendo%20Switch-E60012?style=for-the-badge&logo=nintendo-switch&logoColor=white" alt="Nintendo Switch" />
   <img src="https://img.shields.io/badge/CFW-Atmosph%C3%A8re%201.7%2B-00D2FF?style=for-the-badge" alt="Atmosphere" />
   <img src="https://img.shields.io/badge/Google-Drive%20API%20v3-4285F4?style=for-the-badge&logo=googledrive&logoColor=white" alt="Google Drive" />
@@ -24,7 +24,7 @@
 
 ## 📌 Sumário
 1. [Visão Geral](#-visão-geral)
-2. [Novidades da Versão 0.0.5](#-novidades-da-versão-005)
+2. [Novidades da Versão 0.0.6](#-novidades-da-versão-006)
 3. [Componentes da Suite](#-componentes-da-suite)
 4. [Como Funciona (Arquitetura)](#-como-funciona-arquitetura)
 5. [Instalação Rápida no Cartão SD](#-instalação-rápida-no-cartão-sd)
@@ -53,9 +53,30 @@ O **Google Drive Cloud Save Suite** transforma o seu Nintendo Switch desbloquead
 
 ---
 
-## 🚀 Novidades da Versão 0.0.5
+## 🚀 Novidades da Versão 0.0.6
 
-Esta versão foca em **segurança transacional de dados, integridade temporal e prevenção contra sobrescrita acidental** de saves:
+Esta versão implementa a **refatoração arquitetural completa em 3 partes** com foco em robustez, separação estrita de responsabilidades e segurança transacional:
+
+1. **Sysmodule Produtor Append-Only (Estritamente Read-Only):**
+   - **Toda e qualquer rotina de escrita ou restore em `save:/` foi removida do sysmodule.**
+   - O daemon opera em modo 100% somente leitura (`fsdevMountSaveDataReadOnly`), protegendo os dados locais de corrupção ou travamentos no encerramento de processos.
+2. **Máquina de Estados Explícita (`SyncState`):**
+   - Controle determinístico em 10 estados: `IDLE`, `PROCESS_EXIT_DETECTED`, `WAIT_LOCKS`, `MOUNT_READONLY`, `SNAPSHOT_PREPARE`, `COMPRESS`, `UPLOAD`, `CLEANUP`, `FAILURE_RECOVERY`, `DISABLED`.
+   - Estado `WAIT_LOCKS` com delay protetivo calibrado de 3.5 segundos eliminando race conditions do Horizon OS.
+   - Loop principal não-bloqueante a 100ms de ciclo, com consumo praticamente nulo de CPU.
+3. **Snapshots Versionados e Fila Persistente em Disco:**
+   - Snapshots nomeados com padrão append-only:
+     `sdmc:/config/gdrive-sync/temp/<TitleID>_<AccountUid>_<TimestampUTC>_<CRC32>.zip`
+   - Armazenamento hierárquico versionado no Google Drive: `Switch Saves/<TitleID>/<AccountUid>/`.
+   - Fila de trabalhos persistida em JSON individual em `sdmc:/config/gdrive-sync/pending/<jobId>.json`.
+   - **Regra de Ouro:** O snapshot local só é apagado após confirmação de sucesso HTTP 200/201 do Google Drive.
+4. **Módulos Especializados da Aplicação GUI (`gui/`):**
+   - **`OAuthManager`:** Gerenciamento isolado do fluxo RFC 8628 (Google Device Flow) com polling e persistência atômica.
+   - **`DriveVersionManager`:** Consulta a API v3 retornando versões cronológicas com data/hora UTC legível, CRC32 e tamanho.
+   - **`RestoreManager`:** Ação destrutiva com backup preventivo antes de sobrescrever (`sdmc:/config/gdrive-sync/backups/<TitleID>_before_restore_<timestamp>.zip`), commit obrigatório na partição (`fsdevCommitDevice`) e **rollback automático** em caso de erro.
+   - Registro de auditoria em `sdmc:/config/gdrive-sync/restore.log`.
+
+---
 
 1. **Conversão Precisa de Timestamp (RFC 3339 / ISO 8601 UTC -> `time_t`):**
    - Utilização do algoritmo civil de Howard Hinnant para cálculo de Unix Epoch diretamente em segundos UTC.
