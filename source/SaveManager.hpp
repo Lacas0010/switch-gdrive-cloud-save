@@ -36,9 +36,22 @@ public:
     // Define o timestamp local para o jogo e persiste em timestamps.json
     void setLocalSaveTimestamp(u64 titleId, std::time_t ts);
 
-    // Restaura o save a partir de um .zip baixado:
-    // Faz backup de seguranca do save local atual para sdmc:/config/gdrive-sync/backups/<TitleID>_backup.zip,
-    // limpa save:/, descompacta o .zip baixado, executa commit obrigatorio e desmonta save:/.
+    // Constante de sanidade temporal: 01/01/2025 00:00:00 UTC (1735689600)
+    // Protege contra descalibracao do RTC (1970/2000) por perda de bateria ou modo aviao
+    static constexpr std::time_t MIN_SANE_RTC_TIMESTAMP = 1735689600;
+
+    // Valida se um determinado timestamp e razoavel (>= 01/01/2025)
+    static bool isTimestampSane(std::time_t ts);
+
+    // Valida se o relogio RTC atual do console esta calibrado e e posterior a 01/01/2025
+    static bool isConsoleClockSane(std::time_t* outCurrentTime = nullptr);
+
+    // Restaura o save a partir de um .zip baixado com seguranca transacional e rollback:
+    // 1. Cria backup de seguranca <TitleID>_save_backup.bak
+    // 2. Descompacta e valida conteudo extraido em save:/
+    // 3. Executa commit obrigatorio no Horizon OS
+    // 4. Em caso de qualquer erro, executa rollback restaurando o .bak automaticamente
+    // 5. Em caso de 100% de sucesso, remove o .bak temporario
     bool restoreGameSave(u64 titleId, AccountUid uid, const std::string& zipPath, std::string* outError = nullptr);
 
     // Gerenciamento de timestamps locais

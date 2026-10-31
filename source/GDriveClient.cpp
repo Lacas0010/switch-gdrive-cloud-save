@@ -732,20 +732,50 @@ static size_t curlFileWriteCallback(void* contents, size_t size, size_t nmemb, v
     return fwrite(contents, size, nmemb, fp);
 }
 
+// Algoritmo civil de Howard Hinnant (estritamente UTC, independente do fuso local)
+// Calcula dias transcorridos desde 1970-01-01 de forma puramente matematica
+static inline int64_t daysFromCivilUtc(int y, unsigned m, unsigned d) noexcept {
+    y -= (m <= 2);
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(y - era * 400);            // [0, 399]
+    const unsigned doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1; // [0, 365]
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;           // [0, 146096]
+    return era * 146097LL + static_cast<int64_t>(doe) - 719468LL;
+}
+
 std::time_t GDriveClient::parseIso8601ToUnixTime(const std::string& iso) {
+    if (iso.empty()) return 0;
+
     int year = 0, month = 0, day = 0, hour = 0, min = 0, sec = 0;
+    // Google Drive API retorna RFC 3339 / ISO 8601: "YYYY-MM-DDTHH:MM:SS" (com .fffZ ou Z opcional)
     if (sscanf(iso.c_str(), "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &min, &sec) < 6) {
         return 0;
     }
-    static const int daysBeforeMonth[] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
-    int y = year - 1970;
-    int leapYears = (year - 1969) / 4 - (year - 1901) / 100 + (year - 1601) / 400;
-    bool isCurrentLeap = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0));
-    int days = y * 365 + leapYears + daysBeforeMonth[month - 1] + (day - 1);
-    if (isCurrentLeap && month > 2) {
-        days += 1;
+
+    if (year < 1970 || month < 1 || month > 12 || day < 1 || day > 31 ||
+        hour < 0 || hour > 23 || min < 0 || min > 59 || sec < 0 || sec > 60) {
+        return 0;
     }
-    return (std::time_t)days * 86400 + (std::time_t)hour * 3600 + (std::time_t)min * 60 + sec;
+
+    int64_t days = daysFromCivilUtc(year, static_cast<unsigned>(month), static_cast<unsigned>(day));
+    int64_t epochSeconds = days * 86400LL + hour * 3600LL + min * 60LL + sec;
+
+    // Tratamento de fuso horario caso haja offset explicito (+HH:MM ou -HH:MM) em vez de 'Z'
+    size_t tzPos = iso.find_first_of("+-", 19);
+    if (tzPos != std::string::npos && tzPos + 5 < iso.size()) {
+        char sign = iso[tzPos];
+        int tzHour = 0, tzMin = 0;
+        if (sscanf(iso.c_str() + tzPos + 1, "%d:%d", &tzHour, &tzMin) >= 1) {
+            int offsetSeconds = tzHour * 3600 + tzMin * 60;
+            if (sign == '+') {
+                epochSeconds -= offsetSeconds; // Normaliza para UTC
+            } else if (sign == '-') {
+                epochSeconds += offsetSeconds;
+            }
+        }
+    }
+
+    return static_cast<std::time_t>(epochSeconds);
 }
 
 std::vector<DriveFileInfo> GDriveClient::listDriveSaves(std::string* outError) {

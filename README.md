@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.3-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.3" />
+  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.5-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.5" />
   <img src="https://img.shields.io/badge/Plataforma-Nintendo%20Switch-E60012?style=for-the-badge&logo=nintendo-switch&logoColor=white" alt="Nintendo Switch" />
   <img src="https://img.shields.io/badge/CFW-Atmosph%C3%A8re%201.7%2B-00D2FF?style=for-the-badge" alt="Atmosphere" />
   <img src="https://img.shields.io/badge/Google-Drive%20API%20v3-4285F4?style=for-the-badge&logo=googledrive&logoColor=white" alt="Google Drive" />
@@ -20,7 +20,7 @@
 
 ## 📌 Sumário
 1. [Visão Geral](#-visão-geral)
-2. [Novidades da Versão 0.0.3](#-novidades-da-versão-003)
+2. [Novidades da Versão 0.0.5](#-novidades-da-versão-005)
 3. [Componentes da Suite](#-componentes-da-suite)
 4. [Como Funciona (Arquitetura)](#-como-funciona-arquitetura)
 5. [Instalação Rápida no Cartão SD](#-instalação-rápida-no-cartão-sd)
@@ -46,6 +46,29 @@ O **Google Drive Cloud Save Suite** transforma o seu Nintendo Switch desbloquead
 * 📶 **Resiliência a Comunicação Local (LDN / Y-Comm):** Suporte nativo e automático a jogos como *Pokémon Sword/Shield* e *Animal Crossing*, aguardando a reconexão com a rede Wi-Fi residencial antes do upload.
 * 💾 **Fila Offline com Auto-Recuperação:** Se o console estiver offline no momento do fechamento, o save é enfileirado no cartão SD e enviado em segundo plano assim que a conexão retornar, inclusive sobrevivendo a reinicializações.
 * 🎨 **Interface Gráfica Nativa de Alta Qualidade:** Aplicativo Homebrew (.NRO) moderno renderizado a 720p nativo @ 60 FPS, com visual escuro, destaques em Neon Cyan/Red (Joy-Con), modais de autorização e suporte ao teclado oficial do Switch.
+
+---
+
+## 🚀 Novidades da Versão 0.0.5
+
+Esta versão foca em **segurança transacional de dados, integridade temporal e prevenção contra sobrescrita acidental** de saves:
+
+1. **Conversão Precisa de Timestamp (RFC 3339 / ISO 8601 UTC -> `time_t`):**
+   - Utilização do algoritmo civil de Howard Hinnant para cálculo de Unix Epoch diretamente em segundos UTC.
+   - 100% livre de desvios por fuso horário local ou configurações regionais do console.
+   - Suporte a frações de segundo (`.000Z`) e offsets explícitos (`+HH:MM` / `-HH:MM`).
+
+2. **Validação de Sanidade do Hardware RTC (Console Switch):**
+   - Proteção de segurança temporal ativa: antes de comparar datas para decidir se deve restaurar saves da nuvem, o sistema verifica se o relógio do console é válido e posterior a **01/01/2025** (`MIN_SANE_RTC_TIMESTAMP = 1735689600`).
+   - Impede desastres de perda de dados causados por bateria descarregada, modo avião ou reinicializações onde o relógio reseta para 1970 ou 2000. Nesses casos, o restore automático é bloqueado e uma tela explicativa é exibida.
+
+3. **Backup de Segurança Pré-Restore com Rollback Transacional Automático:**
+   - Antes de descompactar o novo `.zip` sobre os arquivos da partição `save:/`, o sistema cria um backup preventivo no SD (`<TitleID>_save_backup.bak`).
+   - Se ocorrer qualquer falha durante a descompactação, espaço insuficiente ou erro no commit do Horizon OS, o sistema executa **Rollback Automático**, restaurando os arquivos originais locais e garantindo que o progresso do jogo nunca seja corrompido.
+   - Caso a restauração e o commit sejam 100% bem-sucedidos, o `.bak` temporário é removido.
+
+4. **Interface Gráfica com Scroll Vertical e Ícones Procedurais:**
+   - Menu com 6 cards espaçosos por visualização, scrollbar dinâmico com navegação por D-Pad / analógico e ícones procedurais dedicados para todas as 10 opções.
 
 ---
 

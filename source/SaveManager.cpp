@@ -412,48 +412,141 @@ void SaveManager::setLocalSaveTimestamp(u64 titleId, std::time_t ts) {
     saveTimestamps();
 }
 
+bool SaveManager::isTimestampSane(std::time_t ts) {
+    return (ts >= MIN_SANE_RTC_TIMESTAMP);
+}
+
+bool SaveManager::isConsoleClockSane(std::time_t* outCurrentTime) {
+    std::time_t current = 0;
+    u64 switchPosixTime = 0;
+    if (R_SUCCEEDED(timeGetCurrentTime(&switchPosixTime)) && switchPosixTime > 0) {
+        current = static_cast<std::time_t>(switchPosixTime);
+    } else {
+        current = std::time(nullptr);
+    }
+
+    if (outCurrentTime) {
+        *outCurrentTime = current;
+    }
+
+    return isTimestampSane(current);
+}
+
 bool SaveManager::restoreGameSave(u64 titleId, AccountUid uid, const std::string& zipPath, std::string* outError) {
     u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
 
-    // 1. Cria pasta de backups se nao existir
+    // 1. Assegura a existencia da pasta de backups no SD
     mkdir(Config::BACKUP_DIR.c_str(), 0777);
-    char backupPath[128];
-    snprintf(backupPath, sizeof(backupPath), "%s/%016llx_backup.zip", Config::BACKUP_DIR.c_str(), (unsigned long long)baseTitleId);
+    char bakPath[256];
+    snprintf(bakPath, sizeof(bakPath), "%s/%016llx_save_backup.bak",
+             Config::BACKUP_DIR.c_str(), (unsigned long long)baseTitleId);
 
-    // 2. Backup de seguranca do save local atual (se existir)
-    if (R_SUCCEEDED(fsdevMountSaveDataReadOnly("save", baseTitleId, uid))) {
-        ZipHelper::zipDirectory("save:/", backupPath);
-        fsdevUnmountDevice("save");
-    }
-
-    // 3. Monta o save em modo escrita (read-write)
+    // 2. Monta o save em modo escrita (read-write) com fallback para Device Saves
     Result rc = fsdevMountSaveData("save", baseTitleId, uid);
     if (R_FAILED(rc)) {
-        if (outError) *outError = "Falha ao montar particao de save para gravacao (rc=0x" + std::to_string(rc) + ")";
+        rc = fsdevMountDeviceSaveData("save", baseTitleId);
+    }
+    if (R_FAILED(rc)) {
+        char errBuf[128];
+        snprintf(errBuf, sizeof(errBuf), "Falha ao montar particao de save para gravacao (rc=0x%X)", rc);
+        if (outError) *outError = errBuf;
+        Logger::logSync("[%016llX] Mount save for restore FAILED (Code: 0x%X)",
+                        (unsigned long long)baseTitleId, rc);
         return false;
     }
 
-    // 4. Limpa todo o conteudo de save:/
+    // 3. Backup de Seguranca Pré-Restore (Rollback Seguro):
+    // Verifica se ja existem arquivos locais e gera o pacote de seguranca .bak antes de qualquer alteracao
+    std::vector<std::string> existingFiles;
+    ZipHelper::listFilesRecursive("save:/", "", existingFiles);
+    bool hadExistingData = !existingFiles.empty();
+
+    if (hadExistingData) {
+        remove(bakPath); // Remove backup residual antigo se houver
+        if (!ZipHelper::zipDirectory("save:/", bakPath)) {
+            Logger::logSync("[%016llX] WARNING: Failed to create pre-restore backup .bak!",
+                            (unsigned long long)baseTitleId);
+            if (outError) *outError = "Falha ao criar o backup de seguranca antes da restauracao. Operacao abortada.";
+            fsdevUnmountDevice("save");
+            return false;
+        }
+        Logger::logSync("[%016llX] Pre-restore safety backup created: %s (%zu files)",
+                        (unsigned long long)baseTitleId, bakPath, existingFiles.size());
+    }
+
+    // 4. Limpa a particao save:/ para receber os novos arquivos
     ZipHelper::cleanDirectory("save:/");
 
-    // 5. Descompacta o zip baixado para save:/
+    // 5. Descompacta o .zip baixado para a raiz de save:/
     bool unzipOk = ZipHelper::unzipToDirectory(zipPath, "save:/");
-    if (!unzipOk) {
-        if (outError) *outError = "Falha ao descompactar os arquivos no save";
+
+    // 6. Validacao de Sanidade dos arquivos descompactados
+    std::vector<std::string> restoredFiles;
+    if (unzipOk) {
+        ZipHelper::listFilesRecursive("save:/", "", restoredFiles);
+    }
+    bool extractionValid = (unzipOk && !restoredFiles.empty());
+
+    // 7. Commit obrigatorio caso a extracao tenha sido valida
+    Result commitRc = 0;
+    if (extractionValid) {
+        commitRc = fsdevCommitDevice("save");
+    }
+
+    // 8. Tratamento de Falha com ROLLBACK AUTOMATICO
+    if (!extractionValid || R_FAILED(commitRc)) {
+        char failReason[128];
+        if (!unzipOk) {
+            snprintf(failReason, sizeof(failReason), "Descompactacao falhou (arquivo corrompido ou sem espaco)");
+        } else if (restoredFiles.empty()) {
+            snprintf(failReason, sizeof(failReason), "Arquivo zip vazio ou estrutura invalida");
+        } else {
+            snprintf(failReason, sizeof(failReason), "Falha no commit de gravacao (rc=0x%X)", commitRc);
+        }
+
+        Logger::logSync("[%016llX] RESTORE FAILED: %s. Initiating automatic rollback...",
+                        (unsigned long long)baseTitleId, failReason);
+
+        // Executa rollback se possuiamos backup previo
+        if (hadExistingData) {
+            ZipHelper::cleanDirectory("save:/");
+            bool rollbackOk = ZipHelper::unzipToDirectory(bakPath, "save:/");
+            if (rollbackOk) {
+                fsdevCommitDevice("save");
+                Logger::logSync("[%016llX] ROLLBACK COMPLETED: Original local save restored successfully.",
+                                (unsigned long long)baseTitleId);
+                if (outError) {
+                    *outError = std::string("Falha ao restaurar save da nuvem (") + failReason + 
+                                "). ROLLBACK CONCLUIDO: Seus arquivos locais foram restaurados com seguranca.";
+                }
+            } else {
+                Logger::logSync("[%016llX] CRITICAL: Rollback failed to unpack .bak!",
+                                (unsigned long long)baseTitleId);
+                if (outError) {
+                    *outError = "Erro critico na restauracao e falha ao descompactar backup de retorno.";
+                }
+            }
+        } else {
+            if (outError) *outError = std::string("Falha ao restaurar save: ") + failReason;
+        }
+
         fsdevUnmountDevice("save");
         return false;
     }
 
-    // 6. Commit obrigatorio para persistir no cartao/NAND
-    rc = fsdevCommitDevice("save");
+    // 9. Sucesso 100%: desmonta particao, atualiza CRC e remove o .bak temporario
     fsdevUnmountDevice("save");
 
-    if (R_FAILED(rc)) {
-        if (outError) *outError = "Falha ao persistir (commit) alteracoes no save";
-        return false;
+    if (hadExistingData) {
+        remove(bakPath);
+        Logger::logSync("[%016llX] Restore successful (%zu files committed). Temporary .bak removed.",
+                        (unsigned long long)baseTitleId, restoredFiles.size());
+    } else {
+        Logger::logSync("[%016llX] Restore successful (%zu files committed).",
+                        (unsigned long long)baseTitleId, restoredFiles.size());
     }
 
-    // 7. Atualiza o CRC salvo para que o sysmodule nao re-envie o save restaurado
+    // Atualiza o CRC salvo para que o sysmodule nao re-envie o save recem-restaurado
     u32 newCrc = 0;
     if (ZipHelper::calculateFileCrc32(zipPath, newCrc)) {
         m_savedCrcs[baseTitleId] = newCrc;

@@ -408,6 +408,51 @@ void processDownloadBatch(Gfx::Display& display,
                           GDriveClient& client,
                           AccountUid uid,
                           PadState& pad) {
+    auto formatTimestamp = [](std::time_t ts) -> std::string {
+        if (ts <= 0) return "Nao registrado / 0";
+        struct tm* tmInfo = std::gmtime(&ts);
+        if (!tmInfo) return "Desconhecido";
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d UTC",
+                 tmInfo->tm_mday, tmInfo->tm_mon + 1, tmInfo->tm_year + 1900,
+                 tmInfo->tm_hour, tmInfo->tm_min);
+        return buf;
+    };
+
+    // 1. Validacao de Sanidade do Relogio RTC do Console
+    std::time_t currentRtc = 0;
+    if (!SaveManager::isConsoleClockSane(&currentRtc)) {
+        std::string errText = "O relogio do console esta descalibrado (" + formatTimestamp(currentRtc) + " < 2025).\n\n"
+                              "Para evitar sobrescrita indevida de saves locais com a nuvem, a\n"
+                              "sincronizacao automatica foi bloqueada por seguranca.\n\n"
+                              "Por favor, acerte a data/hora nas configuracoes do console ou conecte a internet.";
+        Logger::logSync("[RTC] Clock sanity check FAILED (Current: %lld < %lld). Aborting restore.",
+                        (long long)currentRtc, (long long)SaveManager::MIN_SANE_RTC_TIMESTAMP);
+
+        while (appletMainLoop()) {
+            padUpdate(&pad);
+            u64 k = padGetButtonsDown(&pad);
+            if (k & (HidNpadButton_A | HidNpadButton_B)) break;
+
+            if (display.beginFrame()) {
+                display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
+                int mx = 180, my = 180, mw = 920, mh = 310;
+                display.fillRoundedRect(mx, my, mw, mh, 16, Gfx::Colors::CARD_BG);
+                display.drawRoundedRectOutline(mx, my, mw, mh, 16, Gfx::Colors::JOYCON_RED, 2);
+                display.drawLockIcon(mx + 50, my + 50, 32, Gfx::Colors::JOYCON_RED);
+                display.drawText(mx + 95, my + 35, "RELOGIO DO CONSOLE INVALIDO (RTC)", Gfx::Colors::TEXT_WHITE, 2, true);
+                display.drawText(mx + 95, my + 68, "Protecao contra perda acidental de saves ativada", Gfx::Colors::JOYCON_YELLOW, 1);
+                display.fillRect(mx + 30, my + 105, mw - 60, 2, Gfx::Colors::CARD_OUTLINE);
+                display.drawText(mx + 45, my + 130, errText, Gfx::Colors::TEXT_WHITE, 1);
+                display.drawControllerButtonBadge(mx + mw - 160, my + mh - 50, "B", Gfx::Colors::JOYCON_GRAY);
+                display.drawText(mx + mw - 130, my + mh - 46, "Voltar", Gfx::Colors::TEXT_WHITE, 1);
+                display.endFrame();
+            }
+            svcSleepThread(16'000'000ULL);
+        }
+        return;
+    }
+
     auto showLoading = [&](const std::string& msg) {
         if (display.beginFrame()) {
             display.clearScreenGradient(Gfx::Colors::BG_DARK_TOP, Gfx::Colors::BG_DARK_BOT);
@@ -462,17 +507,6 @@ void processDownloadBatch(Gfx::Display& display,
     int ignoredCount = 0;
     int errorCount = 0;
     std::vector<std::string> summaryLogs;
-
-    auto formatTimestamp = [](std::time_t ts) -> std::string {
-        if (ts <= 0) return "Nao registrado / 0";
-        struct tm* tmInfo = std::gmtime(&ts);
-        if (!tmInfo) return "Desconhecido";
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d UTC",
-                 tmInfo->tm_mday, tmInfo->tm_mon + 1, tmInfo->tm_year + 1900,
-                 tmInfo->tm_hour, tmInfo->tm_min);
-        return buf;
-    };
 
     for (int idx = 0; idx < total; ++idx) {
         const auto& file = driveFiles[idx];
@@ -545,7 +579,17 @@ void processDownloadBatch(Gfx::Display& display,
         float baseFrac = static_cast<float>(idx) / total;
         float nextFrac = static_cast<float>(idx + 1) / total;
 
-        if (driveTs > localTs) {
+        // Validacao de Sanidade do RTC do save local:
+        // Se o save local existir mas o timestamp for anterior a 2025 (RTC resetado para 1970/2000),
+        // abortamos a sobrescrita automatica deste jogo por seguranca para evitar perda de dados.
+        if (localTs > 0 && !SaveManager::isTimestampSane(localTs)) {
+            ignoredCount++;
+            summaryLogs.push_back(gameName + ": Bloqueado (RTC local < 2025)");
+            Logger::logSync("[%016llX] Local save timestamp is suspicious (%lld < 2025). Skipping auto-restore to avoid data loss.",
+                            (unsigned long long)tid, (long long)localTs);
+            renderStep("Bloqueado (Data local < 2025 suspeita de perda de RTC).", nextFrac, Gfx::Colors::JOYCON_YELLOW);
+            svcSleepThread(150'000'000ULL);
+        } else if (driveTs > localTs) {
             renderStep("Baixando versao mais recente: " + gameName + "...", baseFrac + 0.3f / total, Gfx::Colors::DRIVE_YELLOW);
 
             std::string tempZip = Config::TEMP_DIR + "/restore.zip";
@@ -874,6 +918,7 @@ int main(int argc, char* argv[]) {
     setInitialize();
     setsysInitialize();
     fsInitialize();
+    timeInitialize();
     fsdevMountSdmc();
     socketInitializeDefault();
     nifmInitialize(NifmServiceType_User);
@@ -1164,7 +1209,7 @@ int main(int argc, char* argv[]) {
 
             // Título e Versão
             display.drawText(42, 16, "GOOGLE DRIVE CLOUD SAVE", Gfx::Colors::TEXT_WHITE, 2, true);
-            display.drawText(44, 46, "Atmosphere CFW  •  Suite de Sincronizacao v0.0.4", Gfx::Colors::TEXT_MUTED, 1);
+            display.drawText(44, 46, "Atmosphere CFW  •  Suite de Sincronizacao v0.0.5", Gfx::Colors::TEXT_MUTED, 1);
 
             // Badges de Status no Header (Direita)
             // Wi-Fi
@@ -1442,6 +1487,7 @@ int main(int argc, char* argv[]) {
     setsysExit();
     setExit();
     socketExit();
+    timeExit();
     fsdevUnmountAll();
     fsExit();
     smExit();
