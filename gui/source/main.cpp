@@ -12,6 +12,7 @@
 #include "../../source/GDriveClient.hpp"
 #include "../../source/SaveManager.hpp"
 #include "../../source/ZipHelper.hpp"
+#include "../../source/Logger.hpp"
 
 // ==============================================================================
 // TECLADO VIRTUAL NATIVO DO HORIZON OS (swkbd)
