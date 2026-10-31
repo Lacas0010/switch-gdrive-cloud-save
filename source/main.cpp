@@ -13,12 +13,14 @@
 #include "GDriveClient.hpp"
 #include "Logger.hpp"
 
-// 1. Subsistema e ciclo de vida canonico de Sysmodule para libnx / Atmosphere
+// ==============================================================================
+// 1. INICIALIZACAO ENXUTA DE MEMORIA E CICLO DE VIDA PARA SYSMODULE (ATMOSPHERE)
+// ==============================================================================
 extern "C" {
     u32 __nx_applet_type = AppletType_None;
     u32 __nx_fs_num_sessions = 1;
 
-    // 2. Heap estatico de 1.5MB no .bss (otimizado para conviver com multiplos sysmodules no System Pool)
+    // Heap estatico de 1.5MB no .bss (economiza RAM do System Pool do Horizon OS)
     #define INNER_HEAP_SIZE 0x180000 // 1.5 MiB
 
     void __libnx_initheap(void) {
@@ -63,7 +65,9 @@ extern "C" {
     }
 }
 
-// 3. Pool customizado BSD Socket para economizar memoria RAM no System Pool
+// ==============================================================================
+// 2. CONFIGURACAO RESILIENTE DE BSD SOCKET (POOL MINIMO)
+// ==============================================================================
 static const SocketInitConfig s_socketInitConfig = {
     .tcp_tx_buf_size     = 0x4000, // 16KB TX
     .tcp_rx_buf_size     = 0x4000, // 16KB RX
@@ -125,29 +129,48 @@ static bool isInternetConnected() {
     return (R_SUCCEEDED(rc) && connStatus == NifmInternetConnectionStatus_Connected);
 }
 
-struct PendingSave {
-    u64 titleId;
-    std::string zipPath;
-    u32 crc;
-};
-static std::vector<PendingSave> s_pendingSaves;
-
-static void recoverPendingSavesFromDisk() {
+// Recupera snapshots orfaos legados deixados em temp/ e os converte em jobs pendentes
+static void recoverLegacyTempSnapshots(SaveManager& saveManager) {
     DIR* dir = opendir(Config::TEMP_DIR.c_str());
     if (!dir) return;
+
+    AccountUid defaultUid{};
+    saveManager.getActiveAccount(defaultUid);
+    std::string uidStr = SaveManager::formatUid(defaultUid);
 
     struct dirent* entry = nullptr;
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type == DT_REG || entry->d_type == DT_UNKNOWN) {
             std::string name = entry->d_name;
+            // Padrao legado: save_<TitleId>.zip
             if (name.rfind("save_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 4) == ".zip") {
                 unsigned long long tid = 0;
                 if (sscanf(name.c_str(), "save_%llx.zip", &tid) == 1 && tid != 0) {
-                    std::string fullPath = Config::TEMP_DIR + "/" + name;
+                    std::string oldPath = Config::TEMP_DIR + "/" + name;
                     u32 crc = 0;
-                    ZipHelper::calculateFileCrc32(fullPath, crc);
-                    s_pendingSaves.push_back({tid, fullPath, crc});
-                    logSysmodule("[RECOVERY] Save pendente recuperado do SD: 0x%016llX (%s)", tid, name.c_str());
+                    ZipHelper::calculateFileCrc32(oldPath, crc);
+                    std::time_t ts = std::time(nullptr);
+
+                    char newSnapName[256];
+                    snprintf(newSnapName, sizeof(newSnapName), "%016llX_%s_%lld_%08X.zip",
+                             tid, uidStr.c_str(), (long long)ts, crc);
+                    std::string newSnapPath = Config::TEMP_DIR + "/" + newSnapName;
+                    rename(oldPath.c_str(), newSnapPath.c_str());
+
+                    PendingUploadJob job;
+                    char jId[128];
+                    snprintf(jId, sizeof(jId), "%016llX_%lld_%08X", tid, (long long)ts, crc);
+                    job.jobId = jId;
+                    job.titleId = tid;
+                    job.uid = defaultUid;
+                    job.accountUidStr = uidStr;
+                    job.timestampUtc = ts;
+                    job.crc32 = crc;
+                    job.fileCount = 1;
+                    job.zipPath = newSnapPath;
+
+                    saveManager.savePendingJob(job);
+                    logSysmodule("[RECOVERY] Snapshot legado convertido para pendencia: %s", newSnapName);
                 }
             }
         }
@@ -155,12 +178,14 @@ static void recoverPendingSavesFromDisk() {
     closedir(dir);
 }
 
+// ==============================================================================
+// 3. PONTO DE ENTRADA DO SYSMODULE COM MAQUINA DE ESTADOS EXPLÍCITA
+// ==============================================================================
 int main(int argc, char* argv[]) {
-    // Garante que a estrutura de pastas no SD exista
     Config::ensureDirectories();
-    logSysmodule("[BOOT] Sysmodule CloudSave iniciado!");
+    logSysmodule("[BOOT] Sysmodule CloudSave iniciado (Arquitetura Append-Only)");
 
-    // Inicializa pmdmnt e pminfo com resiliencia para o boot2
+    // Inicializacao dos servicos pmdmnt e pminfo com retentativas para boot2
     for (int attempt = 0; attempt < 30; ++attempt) {
         if (!s_pmdmntReady && R_SUCCEEDED(pmdmntInitialize())) {
             s_pmdmntReady = true;
@@ -169,10 +194,10 @@ int main(int argc, char* argv[]) {
             s_pminfoReady = true;
         }
         if (s_pmdmntReady && s_pminfoReady) break;
-        svcSleepThread(500'000'000ULL); // 500ms
+        svcSleepThread(500'000'000ULL);
     }
 
-    // Aguarda qlaunch (Home Menu - 0x0100000000001000) caso estejamos subindo no boot2
+    // Aguarda Home Menu (qlaunch) inicializar se o console acabou de ligar
     if (s_pmdmntReady) {
         u64 qlaunchPid = 0;
         for (int i = 0; i < 60; ++i) {
@@ -193,125 +218,90 @@ int main(int argc, char* argv[]) {
 
     bool deviceCodeRequested = false;
 
-    // Recupera eventuais saves que ficaram salvos no SD enquanto o console estava offline
-    recoverPendingSavesFromDisk();
+    // Converte e registra eventuais snapshots offline residuais
+    recoverLegacyTempSnapshots(saveManager);
 
-    // Loop de monitoramento em segundo plano
+    // ==========================================================================
+    // LOOP PRINCIPAL DA MAQUINA DE ESTADOS (100ms por ciclo - CPU amigavel)
+    // ==========================================================================
     while (s_running) {
-        // 1. Gerenciamento de Autenticacao OAuth 2.0 (Device Flow)
+        // Manutencao de Autorizacao OAuth2 (Device Flow)
         if (!gdrive.isAuthorized()) {
             gdrive.loadConfig();
         }
-
         if (gdrive.isConfigured() && !gdrive.isAuthorized()) {
             if (isInternetConnected()) {
                 if (!deviceCodeRequested) {
                     if (gdrive.requestDeviceCode()) {
                         deviceCodeRequested = true;
-                        logSysmodule("[AUTH] Device code solicitado com sucesso.");
+                        logSysmodule("[AUTH] Device code solicitado.");
                     }
                 } else {
-                    // Tenta polling para verificar se o usuario digitou o codigo no celular/PC
                     if (gdrive.pollAuthorization()) {
                         deviceCodeRequested = false;
-                        logSysmodule("[AUTH] Autorizacao concluida com sucesso!");
+                        logSysmodule("[AUTH] Autorizacao OAuth2 concluida!");
                     }
                 }
             }
         }
 
-        // 1.1 Processa fila de saves pendentes (ex: jogos fechados offline ou apos desativar LDN)
-        if (!s_pendingSaves.empty() && isInternetConnected() && gdrive.isAuthorized()) {
-            for (auto it = s_pendingSaves.begin(); it != s_pendingSaves.end(); ) {
-                std::string upErr;
-                if (gdrive.uploadSaveArchive(it->titleId, it->zipPath, &upErr)) {
-                    saveManager.markSaveUploaded(it->titleId, it->crc);
-                    logSysmodule("[SYNC] Save pendente 0x%016llX enviado com sucesso ao Drive!",
-                                 (unsigned long long)it->titleId);
-                    it = s_pendingSaves.erase(it);
-                } else {
-                    logSysmodule("[ERROR] Falha ao enviar save pendente 0x%016llX: %s",
-                                 (unsigned long long)it->titleId, upErr.c_str());
-                    ++it;
-                }
-            }
-        }
-
-        // 2. Monitoramento de Jogos e Backup de Saves
+        // Execucao da Maquina de Estados
         u64 closedTitleId = 0;
-        if (s_pmdmntReady && s_pminfoReady && monitor.hasGameJustExited(closedTitleId)) {
-            Logger::logSync("[%016llX] Process terminated", (unsigned long long)closedTitleId);
-            logSysmodule("[EVENT] Jogo fechado detectado: 0x%016llX", (unsigned long long)closedTitleId);
-
-            // Aguarda 3.5 segundos para que o Horizon OS descarregue o cache e libere travas de arquivos de save
-            svcSleepThread(3'500'000'000ULL);
-
-            // Verifica se o jogo esta autorizado no modo whitelist
-            if (!gdrive.isTitleTracked(closedTitleId)) {
-                Logger::logSync("[%016llX] Game ignored by whitelist.", (unsigned long long)closedTitleId);
-                logSysmodule("[FILTER] Jogo 0x%016llX ignorado pelo modo whitelist.", (unsigned long long)closedTitleId);
-            } else {
-                // Um jogo foi fechado. Verifica se ha conta de usuario ativa
-                AccountUid uid{};
-                if (!saveManager.getActiveAccount(uid)) {
-                    Logger::logSync("[%016llX] FAILED: Could not obtain active user account.", (unsigned long long)closedTitleId);
-                    logSysmodule("[ERROR] Nao foi possivel obter usuario ativo para save 0x%016llX", (unsigned long long)closedTitleId);
+        switch (saveManager.GetState()) {
+            case SyncState::IDLE:
+                if (s_pmdmntReady && s_pminfoReady && monitor.hasGameJustExited(closedTitleId)) {
+                    logSysmodule("[EVENT] Fechamento de jogo detectado: 0x%016llX", (unsigned long long)closedTitleId);
+                    saveManager.OnProcessExit(closedTitleId);
                 } else {
-                    logSysmodule("[SAVE] Lendo e compactando save de 0x%016llX...", (unsigned long long)closedTitleId);
-                    std::string zipPath;
-                    bool changed = false;
-
-                    // Processa e compacta o save (com retry loop interno caso a particao esteja busy)
-                    if (!saveManager.processGameSave(closedTitleId, uid, zipPath, changed)) {
-                        logSysmodule("[ERROR] Falha ao ler ou compactar save de 0x%016llX", (unsigned long long)closedTitleId);
-                    } else if (!changed) {
-                        logSysmodule("[INFO] Save 0x%016llX inalterado (mesmo CRC), upload dispensado.", (unsigned long long)closedTitleId);
-                    } else {
-                        u32 newCrc = 0;
-                        ZipHelper::calculateFileCrc32(zipPath, newCrc);
-                        logSysmodule("[SAVE] Save compactado com sucesso! CRC=0x%08X", newCrc);
-
-                        // Jogos como Pokemon Sword usam Comunicacao Local (LDN / Y-Comm) que desligam o Wi-Fi e o audio Bluetooth.
-                        // Ao fechar o jogo, o Horizon OS precisa de 15 a 45 segundos para restabelecer a conexao com o roteador.
-                        logSysmodule("[NETWORK] Aguardando reconexao Wi-Fi (timeout 60s)...");
-                        bool connected = false;
-                        for (int attempt = 0; attempt < 60; ++attempt) {
-                            if (isInternetConnected()) {
-                                connected = true;
-                                logSysmodule("[NETWORK] Wi-Fi reconectado apos %d segundos!", attempt);
-                                break;
-                            }
-                            svcSleepThread(1'000'000'000ULL); // 1 segundo por tentativa (total 60s / 1 minuto)
-                        }
-
-                        if (connected && gdrive.isAuthorized()) {
-                            logSysmodule("[UPLOAD] Iniciando upload de 0x%016llX ao Google Drive...", (unsigned long long)closedTitleId);
-                            std::string upErr;
-                            if (gdrive.uploadSaveArchive(closedTitleId, zipPath, &upErr)) {
-                                saveManager.markSaveUploaded(closedTitleId, newCrc);
-                                logSysmodule("[SYNC] Save 0x%016llX enviado ao Google Drive (CRC=0x%08X)",
-                                             (unsigned long long)closedTitleId, newCrc);
-                            } else {
-                                logSysmodule("[ERROR] Falha no upload imediato de 0x%016llX: %s. Enfileirando...",
-                                             (unsigned long long)closedTitleId, upErr.c_str());
-                                s_pendingSaves.push_back({closedTitleId, zipPath, newCrc});
-                            }
-                        } else {
-                            Logger::logSync("[%016llX] Wi-Fi not connected after 60s (LDN/offline). Enqueuing save to pending list.",
-                                            (unsigned long long)closedTitleId);
-                            logSysmodule("[WARN] Sem Wi-Fi apos fechar 0x%016llX (LDN/offline). Enfileirando para envio posterior...",
-                                         (unsigned long long)closedTitleId);
-                            s_pendingSaves.push_back({closedTitleId, zipPath, newCrc});
-                        }
+                    // Se nao ha jogo fechando, tenta enviar snapshots acumulados na fila
+                    if (isInternetConnected() && gdrive.isAuthorized()) {
+                        saveManager.TryFlushPending(gdrive);
                     }
                 }
-            }
+                break;
+
+            case SyncState::PROCESS_EXIT_DETECTED:
+                saveManager.HandleProcessExitDetected(gdrive);
+                break;
+
+            case SyncState::WAIT_LOCKS:
+                saveManager.HandleWaitLocks();
+                break;
+
+            case SyncState::MOUNT_READONLY:
+                saveManager.HandleMountReadOnly();
+                break;
+
+            case SyncState::SNAPSHOT_PREPARE:
+                saveManager.HandleSnapshotPrepare();
+                break;
+
+            case SyncState::COMPRESS:
+                saveManager.HandleCompress();
+                break;
+
+            case SyncState::UPLOAD:
+                saveManager.HandleUpload(gdrive);
+                break;
+
+            case SyncState::CLEANUP:
+                saveManager.HandleCleanup();
+                break;
+
+            case SyncState::FAILURE_RECOVERY:
+                saveManager.HandleFailureRecovery();
+                break;
+
+            case SyncState::DISABLED:
+                break;
         }
 
-        // Libera CPU dormindo por 3 segundos
-        svcSleepThread(3'000'000'000ULL);
+        // Libera tempo de CPU: 100ms de sono por iteracao
+        svcSleepThread(100'000'000ULL);
     }
 
+    saveManager.Shutdown();
     cleanupServices();
+    logSysmodule("[SHUTDOWN] Sysmodule finalizado.");
     return 0;
 }

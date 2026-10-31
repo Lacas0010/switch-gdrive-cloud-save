@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <unistd.h>
 #include "Renderer2D.hpp"
+#include "OAuthManager.hpp"
+#include "DriveVersionManager.hpp"
+#include "RestoreManager.hpp"
 #include "../../source/Config.hpp"
 #include "../../source/GDriveClient.hpp"
 #include "../../source/SaveManager.hpp"
@@ -606,8 +609,9 @@ void processDownloadBatch(Gfx::Display& display,
 
             renderStep("Restaurando save e persistindo no console...", baseFrac + 0.7f / total, Gfx::Colors::JOYCON_CYAN);
 
-            std::string resErr;
-            bool resOk = saveManager.restoreGameSave(tid, uid, tempZip, &resErr);
+            RestoreResult res = RestoreManager::restoreFromLocalZip(tid, uid, tempZip);
+            bool resOk = res.success;
+            std::string resErr = res.errorMessage;
             remove(tempZip.c_str());
 
             if (resOk) {

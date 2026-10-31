@@ -43,8 +43,8 @@ export TOPDIR   := $(CURDIR)
 export VPATH    := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR  := $(CURDIR)/$(BUILD)
 
-# Filtra apenas main.cpp da GUI, GDriveClient.cpp, SaveManager.cpp e ZipHelper.cpp do core
-CPPFILES        := source/main.cpp ../source/GDriveClient.cpp ../source/SaveManager.cpp ../source/ZipHelper.cpp
+# Compila os modulos da GUI e os modulos core do sistema
+CPPFILES        := source/main.cpp source/OAuthManager.cpp source/DriveVersionManager.cpp source/RestoreManager.cpp ../source/GDriveClient.cpp ../source/SaveManager.cpp ../source/ZipHelper.cpp
 
 export OFILES   := $(notdir $(CPPFILES:.cpp=.o))
 
@@ -96,6 +96,18 @@ main.o: $(TOPDIR)/source/main.cpp
 	@echo "Compilando $(notdir $<)..."
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
+OAuthManager.o: $(TOPDIR)/source/OAuthManager.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+DriveVersionManager.o: $(TOPDIR)/source/DriveVersionManager.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+RestoreManager.o: $(TOPDIR)/source/RestoreManager.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
 GDriveClient.o: $(TOPDIR)/../source/GDriveClient.cpp
 	@echo "Compilando $(notdir $<)..."
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
@@ -105,6 +117,14 @@ SaveManager.o: $(TOPDIR)/../source/SaveManager.cpp
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 ZipHelper.o: $(TOPDIR)/../source/ZipHelper.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+%.o: $(TOPDIR)/source/%.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+%.o: $(TOPDIR)/../source/%.cpp
 	@echo "Compilando $(notdir $<)..."
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 

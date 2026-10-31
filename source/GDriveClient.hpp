@@ -60,14 +60,23 @@ public:
     // Garante que a pasta destino exista no Google Drive (cria se necessario e salva folder_id)
     std::string ensureFolderExists(const std::string& folderName = "");
 
+    // Garante que uma subpasta com folderName exista dentro de parentFolderId (cria se necessario)
+    std::string ensureSubFolderExists(const std::string& folderName, const std::string& parentFolderId);
+
     // Busca se um arquivo com o nome informado ja existe dentro da pasta informada
     std::string findFileInFolder(const std::string& fileName, const std::string& parentFolderId);
 
     // Faz upload ou atualizacao (PATCH) do .zip do save sem duplicatas
     bool uploadSaveArchive(u64 titleId, const std::string& zipPath, std::string* outError = nullptr);
 
-    // Lista os saves existentes na pasta do Google Drive com timestamps e metadados
+    // Envia um snapshot em arquivo append-only para uma pasta especifica sem deletar o arquivo local em caso de erro
+    bool uploadSnapshotFile(const std::string& parentFolderId, const std::string& fileName, const std::string& zipPath, std::string* outError = nullptr);
+
+    // Lista os saves existentes na pasta raiz do Google Drive
     std::vector<DriveFileInfo> listDriveSaves(std::string* outError = nullptr);
+
+    // Lista todos os arquivos existentes dentro de uma pasta especifica (parentFolderId)
+    std::vector<DriveFileInfo> listFilesInFolder(const std::string& parentFolderId, std::string* outError = nullptr);
 
     // Baixa o arquivo do Google Drive diretamente para o arquivo destinationPath no SD
     bool downloadFile(const std::string& fileId, const std::string& destinationPath, std::string* outError = nullptr);

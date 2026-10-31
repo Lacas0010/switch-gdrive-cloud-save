@@ -523,6 +523,52 @@ std::string GDriveClient::ensureFolderExists(const std::string& folderName) {
     return "";
 }
 
+std::string GDriveClient::ensureSubFolderExists(const std::string& folderName, const std::string& parentFolderId) {
+    if (folderName.empty() || parentFolderId.empty()) return "";
+
+    // 1. Busca se a subpasta ja existe dentro de parentFolderId
+    std::string rawQuery = "mimeType='application/vnd.google-apps.folder' and name='" + folderName + "' and '" + parentFolderId + "' in parents and trashed=false";
+    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name)";
+
+    std::string searchResp = httpGet(searchUrl, m_accessToken);
+    std::string foundId = extractFirstFileId(searchResp);
+    if (!foundId.empty()) {
+        return foundId;
+    }
+
+    // 2. Se nao existe, cria via POST com parentFolderId
+    std::string createBody = "{\"name\": \"" + folderName + "\", \"mimeType\": \"application/vnd.google-apps.folder\", \"parents\": [\"" + parentFolderId + "\"]}";
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return "";
+
+    std::string response;
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + m_accessToken).c_str());
+    headers = curl_slist_append(headers, "Content-Type: application/json; charset=UTF-8");
+
+    curl_easy_setopt(curl, CURLOPT_URL, "https://www.googleapis.com/drive/v3/files");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, createBody.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_CAINFO, Config::getCaBundlePath().c_str());
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res == CURLE_OK) {
+        std::string newId = extractJsonString(response, "id");
+        if (!newId.empty()) {
+            return newId;
+        }
+    }
+    return "";
+}
+
 std::string GDriveClient::findFileInFolder(const std::string& fileName, const std::string& parentFolderId) {
     // Busca se ja existe arquivo com o mesmo nome na pasta (inclusive se estiver na lixeira)
     std::string rawQuery = "name='" + fileName + "' and '" + parentFolderId + "' in parents";
@@ -727,6 +773,119 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     return true;
 }
 
+bool GDriveClient::uploadSnapshotFile(const std::string& parentFolderId, const std::string& fileName, const std::string& zipPath, std::string* outError) {
+    if (!refreshAccessToken(outError)) {
+        return false;
+    }
+
+    FILE* fd = fopen(zipPath.c_str(), "rb");
+    if (!fd) {
+        if (outError) *outError = "Nao foi possivel abrir o arquivo .zip";
+        return false;
+    }
+
+    std::string boundary = "-------CloudSaveBoundary7MA4YWxkTrZu0gW";
+    std::string metadata = "--" + boundary + "\r\n" +
+                           "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+                           "{\"name\": \"" + fileName + "\", \"parents\": [\"" + parentFolderId + "\"]}\r\n" +
+                           "--" + boundary + "\r\n" +
+                           "Content-Type: application/zip\r\n\r\n";
+    std::string closing = "\r\n--" + boundary + "--\r\n";
+
+    std::string payloadPath = Config::TEMP_DIR + "/upload_stream.tmp";
+    FILE* streamFile = fopen(payloadPath.c_str(), "wb");
+    if (!streamFile) {
+        fclose(fd);
+        if (outError) *outError = "Falha ao criar stream temporario";
+        return false;
+    }
+
+    fwrite(metadata.data(), 1, metadata.size(), streamFile);
+
+    {
+        constexpr size_t BUF_SIZE = 16 * 1024;
+        std::vector<unsigned char> buffer(BUF_SIZE);
+        size_t readBytes = 0;
+        while ((readBytes = fread(buffer.data(), 1, BUF_SIZE, fd)) > 0) {
+            fwrite(buffer.data(), 1, readBytes, streamFile);
+        }
+    }
+    fclose(fd);
+
+    fwrite(closing.data(), 1, closing.size(), streamFile);
+    fclose(streamFile);
+
+    FILE* uploadFp = fopen(payloadPath.c_str(), "rb");
+    if (!uploadFp) {
+        remove(payloadPath.c_str());
+        if (outError) *outError = "Falha ao abrir stream de upload";
+        return false;
+    }
+
+    fseek(uploadFp, 0, SEEK_END);
+    size_t totalPayloadSize = ftell(uploadFp);
+    fseek(uploadFp, 0, SEEK_SET);
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        fclose(uploadFp);
+        remove(payloadPath.c_str());
+        if (outError) *outError = "Falha ao inicializar cURL";
+        return false;
+    }
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + m_accessToken).c_str());
+    headers = curl_slist_append(headers, ("Content-Type: multipart/related; boundary=" + boundary).c_str());
+    headers = curl_slist_append(headers, "Expect:");
+
+    std::string uploadUrl = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
+    std::string response;
+
+    curl_easy_setopt(curl, CURLOPT_URL, uploadUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, curlFileReadCallback);
+    curl_easy_setopt(curl, CURLOPT_READDATA, uploadFp);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(totalPayloadSize));
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_CAINFO, Config::getCaBundlePath().c_str());
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 600L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);
+
+    CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    fclose(uploadFp);
+    remove(payloadPath.c_str());
+
+    if (res != CURLE_OK) {
+        std::string errStr = curl_easy_strerror(res);
+        if (outError) *outError = errStr;
+        return false;
+    }
+
+    if (httpCode < 200 || httpCode >= 300) {
+        std::string apiErr = extractJsonString(response, "message");
+        if (apiErr.empty()) apiErr = "HTTP " + std::to_string(httpCode);
+        else apiErr = "HTTP " + std::to_string(httpCode) + " (" + apiErr + ")";
+        if (outError) *outError = apiErr;
+        return false;
+    }
+
+    // Regra de ouro: Arquivo enviado com sucesso (HTTP 200/201). O arquivo ZIP em temp/
+    // NAO e deletado aqui; a exclusao so acontece apos o caller registrar o snapshot na fila.
+    return true;
+}
+
 static size_t curlFileWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     FILE* fp = static_cast<FILE*>(userp);
     return fwrite(contents, size, nmemb, fp);
@@ -831,6 +990,75 @@ std::vector<DriveFileInfo> GDriveClient::listDriveSaves(std::string* outError) {
         unsigned long long tid = 0;
         if (sscanf(info.name.c_str(), "save_%llx.zip", &tid) == 1 ||
             sscanf(info.name.c_str(), "save_%llX.zip", &tid) == 1) {
+            info.titleId = tid;
+        }
+
+        if (!info.id.empty() && !info.name.empty()) {
+            results.push_back(info);
+        }
+
+        cur = objEnd + 1;
+    }
+
+    return results;
+}
+
+std::vector<DriveFileInfo> GDriveClient::listFilesInFolder(const std::string& parentFolderId, std::string* outError) {
+    std::vector<DriveFileInfo> results;
+    if (parentFolderId.empty()) {
+        if (outError) *outError = "ID de pasta pai invalido";
+        return results;
+    }
+
+    if (!refreshAccessToken(outError)) {
+        return results;
+    }
+
+    std::string rawQuery = "'" + parentFolderId + "' in parents and trashed = false";
+    std::string url = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) +
+                      "&fields=" + urlEncode("files(id,name,modifiedTime,size)") +
+                      "&orderBy=" + urlEncode("modifiedTime desc") +
+                      "&pageSize=100";
+
+    std::string jsonResponse = httpGet(url, m_accessToken);
+    if (jsonResponse.empty()) {
+        if (outError) *outError = "Sem resposta da API do Google Drive";
+        return results;
+    }
+
+    size_t filesPos = jsonResponse.find("\"files\"");
+    if (filesPos == std::string::npos) {
+        return results;
+    }
+
+    size_t arrayStart = jsonResponse.find('[', filesPos);
+    size_t arrayEnd = jsonResponse.rfind(']');
+    if (arrayStart == std::string::npos || arrayEnd == std::string::npos) {
+        return results;
+    }
+
+    size_t cur = arrayStart;
+    while ((cur = jsonResponse.find('{', cur)) != std::string::npos && cur < arrayEnd) {
+        size_t objEnd = jsonResponse.find('}', cur);
+        if (objEnd == std::string::npos || objEnd > arrayEnd) break;
+
+        std::string obj = jsonResponse.substr(cur, objEnd - cur + 1);
+        DriveFileInfo info;
+        info.id = extractJsonString(obj, "id");
+        info.name = extractJsonString(obj, "name");
+        std::string modTimeStr = extractJsonString(obj, "modifiedTime");
+        info.modifiedTime = parseIso8601ToUnixTime(modTimeStr);
+
+        std::string sizeStr = extractJsonString(obj, "size");
+        if (!sizeStr.empty()) {
+            info.size = static_cast<size_t>(strtoull(sizeStr.c_str(), nullptr, 10));
+        }
+
+        unsigned long long tid = 0;
+        if (sscanf(info.name.c_str(), "save_%llx.zip", &tid) == 1 ||
+            sscanf(info.name.c_str(), "save_%llX.zip", &tid) == 1 ||
+            sscanf(info.name.c_str(), "%llx_", &tid) == 1 ||
+            sscanf(info.name.c_str(), "%llX_", &tid) == 1) {
             info.titleId = tid;
         }
 

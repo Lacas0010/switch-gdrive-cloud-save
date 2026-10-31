@@ -5,6 +5,20 @@
 #include <map>
 #include <ctime>
 
+// Estados canonicos da Maquina de Sincronizacao Append-Only (Sysmodule Produtor)
+enum class SyncState {
+    IDLE,
+    PROCESS_EXIT_DETECTED,
+    WAIT_LOCKS,
+    MOUNT_READONLY,
+    SNAPSHOT_PREPARE,
+    COMPRESS,
+    UPLOAD,
+    CLEANUP,
+    FAILURE_RECOVERY,
+    DISABLED
+};
+
 struct GameSaveInfo {
     u64 titleId = 0;
     std::string titleName;
@@ -12,56 +26,100 @@ struct GameSaveInfo {
     bool selected = false;
 };
 
+struct PendingUploadJob {
+    std::string jobId;
+    u64 titleId = 0;
+    AccountUid uid{};
+    std::string accountUidStr;
+    std::time_t timestampUtc = 0;
+    u32 crc32 = 0;
+    size_t fileCount = 0;
+    std::string zipPath;
+    int retryCount = 0;
+    std::string lastError;
+};
+
+class GDriveClient;
+
 class SaveManager {
 public:
     SaveManager();
     ~SaveManager();
 
-    // Obtem o AccountUid do usuario ativo/recente no console
+    // Controle da Maquina de Estados
+    SyncState GetState() const { return m_state; }
+    void SetState(SyncState state) { m_state = state; }
+
+    // Encerramento seguro do servico
+    void Shutdown();
+
+    // Notificacao de termino de jogo
+    void OnProcessExit(u64 titleId);
+
+    // Manipuladores de cada estado no loop principal do sysmodule
+    void HandleProcessExitDetected(GDriveClient& gdrive);
+    void HandleWaitLocks();
+    void HandleMountReadOnly();
+    void HandleSnapshotPrepare();
+    void HandleCompress();
+    void HandleUpload(GDriveClient& gdrive);
+    void HandleCleanup();
+    void HandleFailureRecovery();
+
+    // Gestao da fila persistente em disco (sdmc:/config/gdrive-sync/pending/<jobId>.json)
+    void TryFlushPending(GDriveClient& gdrive);
+    bool FlushPendingUploads(GDriveClient& gdrive);
+
+    // Funcoes de descoberta e leitura estritamente READ-ONLY
     bool getActiveAccount(AccountUid& outUid);
-
-    // Lista todos os jogos que possuem save data para o usuario especificado (ou ativo)
     std::vector<GameSaveInfo> listAvailableSaves(AccountUid uid);
-
-    // Processa o save: monta "save:/", compacta em .zip temporario no SD e verifica alteracao via CRC32
-    // Se forceArchive = true, preserva o arquivo .zip mesmo se o CRC for identico ao anterior (util para uploads manuais)
     bool processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged, bool forceArchive = false);
-
-    // Atualiza o estado salvo apos o upload com sucesso
     void markSaveUploaded(u64 titleId, u32 crc);
 
-    // Obtem o timestamp Unix UTC da versao local do save (via timestamps.json ou stat de save:/)
+    // Gestao de timestamps locais
     std::time_t getLocalSaveTimestamp(u64 titleId, AccountUid uid);
-
-    // Define o timestamp local para o jogo e persiste em timestamps.json
     void setLocalSaveTimestamp(u64 titleId, std::time_t ts);
 
-    // Constante de sanidade temporal: 01/01/2025 00:00:00 UTC (1735689600)
-    // Protege contra descalibracao do RTC (1970/2000) por perda de bateria ou modo aviao
+    // Validacao de sanidade temporal (01/01/2025 00:00:00 UTC = 1735689600)
     static constexpr std::time_t MIN_SANE_RTC_TIMESTAMP = 1735689600;
-
-    // Valida se um determinado timestamp e razoavel (>= 01/01/2025)
     static bool isTimestampSane(std::time_t ts);
-
-    // Valida se o relogio RTC atual do console esta calibrado e e posterior a 01/01/2025
     static bool isConsoleClockSane(std::time_t* outCurrentTime = nullptr);
 
-    // Restaura o save a partir de um .zip baixado com seguranca transacional e rollback:
-    // 1. Cria backup de seguranca <TitleID>_save_backup.bak
-    // 2. Descompacta e valida conteudo extraido em save:/
-    // 3. Executa commit obrigatorio no Horizon OS
-    // 4. Em caso de qualquer erro, executa rollback restaurando o .bak automaticamente
-    // 5. Em caso de 100% de sucesso, remove o .bak temporario
-    bool restoreGameSave(u64 titleId, AccountUid uid, const std::string& zipPath, std::string* outError = nullptr);
+    // Conversoes de AccountUid para string hexadecimal
+    static std::string formatUid(const AccountUid& uid);
+    static AccountUid parseUid(const std::string& str);
 
-    // Gerenciamento de timestamps locais
+    // Persistencia da fila de upload em JSON individual
+    bool savePendingJob(const PendingUploadJob& job);
+    std::vector<PendingUploadJob> loadPendingJobs();
+    bool removePendingJob(const std::string& jobId);
+
+    void loadState();
+    void saveState();
     void loadTimestamps();
     void saveTimestamps();
 
 private:
+    SyncState m_state = SyncState::IDLE;
+
+    // Variaveis de contexto da operacao atual de snapshot
+    u64 m_currentTitleId = 0;
+    u64 m_baseTitleId = 0;
+    AccountUid m_currentUid{};
+    std::string m_currentUidStr;
+    bool m_isDeviceSave = false;
+    std::time_t m_currentTimestamp = 0;
+    u32 m_currentCrc = 0;
+    size_t m_currentFileCount = 0;
+    std::string m_snapshotZipPath;
+    std::string m_currentJobId;
+
+    // Temporizadores e retentativas
+    int m_lockWaitTicks = 0;
+    int m_mountRetryAttempts = 0;
+    int m_recoveryAttempts = 0;
+    u64 m_lastFlushTick = 0;
+
     std::map<u64, u32> m_savedCrcs;
     std::map<u64, std::time_t> m_timestamps;
-
-    void loadState();
-    void saveState();
 };

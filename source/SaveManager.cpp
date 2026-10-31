@@ -1,10 +1,49 @@
 #include "SaveManager.hpp"
 #include "ZipHelper.hpp"
+#include "GDriveClient.hpp"
 #include "Config.hpp"
 #include "Logger.hpp"
 #include <cstdio>
 #include <cstring>
-#include <sstream>
+#include <cstdlib>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <algorithm>
+
+namespace {
+    static void logSys(const char* fmt, ...) {
+        FILE* f = fopen(Config::SYNC_LOG_FILE.c_str(), "a");
+        if (!f) return;
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(f, fmt, args);
+        fprintf(f, "\n");
+        va_end(args);
+        fclose(f);
+    }
+
+    static std::string extractJsonField(const std::string& json, const std::string& key) {
+        std::string pattern = "\"" + key + "\"";
+        size_t pos = json.find(pattern);
+        if (pos == std::string::npos) return "";
+
+        size_t colon = json.find(':', pos + pattern.size());
+        if (colon == std::string::npos) return "";
+
+        size_t start = json.find_first_not_of(" \t\r\n", colon + 1);
+        if (start == std::string::npos) return "";
+
+        if (json[start] == '"') {
+            size_t end = json.find('"', start + 1);
+            if (end == std::string::npos) return "";
+            return json.substr(start + 1, end - start - 1);
+        } else {
+            size_t end = json.find_first_of(",}\r\n", start);
+            if (end == std::string::npos) end = json.size();
+            return json.substr(start, end - start);
+        }
+    }
+}
 
 SaveManager::SaveManager() {
     loadState();
@@ -16,11 +55,35 @@ SaveManager::~SaveManager() {
     saveTimestamps();
 }
 
+void SaveManager::Shutdown() {
+    fsdevUnmountDevice("save");
+    m_state = SyncState::DISABLED;
+}
+
+std::string SaveManager::formatUid(const AccountUid& uid) {
+    char buf[33];
+    u64 hi = (u64)(uid.uid >> 64);
+    u64 lo = (u64)(uid.uid & 0xFFFFFFFFFFFFFFFFULL);
+    snprintf(buf, sizeof(buf), "%016llX%016llX", (unsigned long long)hi, (unsigned long long)lo);
+    return std::string(buf);
+}
+
+AccountUid SaveManager::parseUid(const std::string& str) {
+    AccountUid uid{};
+    if (str.length() >= 32) {
+        unsigned long long hi = 0, lo = 0;
+        std::string hiStr = str.substr(0, 16);
+        std::string loStr = str.substr(16, 16);
+        hi = std::strtoull(hiStr.c_str(), nullptr, 16);
+        lo = std::strtoull(loStr.c_str(), nullptr, 16);
+        uid.uid = ((u128)hi << 64) | (u128)lo;
+    }
+    return uid;
+}
+
 bool SaveManager::getActiveAccount(AccountUid& outUid) {
-    // 1. Tenta AccountServiceType_Application (acc:u0) que eh o padrao mais confiavel para ler perfis
     Result rc = accountInitialize(AccountServiceType_Application);
     if (R_FAILED(rc)) {
-        // Fallback para System (acc:u1) ou Administrator (acc:su)
         rc = accountInitialize(AccountServiceType_System);
         if (R_FAILED(rc)) {
             rc = accountInitialize(AccountServiceType_Administrator);
@@ -30,7 +93,7 @@ bool SaveManager::getActiveAccount(AccountUid& outUid) {
 
     AccountUid uid{};
 
-    // 1. Tenta usuario pre-selecionado (usuario ativo que abriu o jogo)
+    // 1. Tenta usuario pre-selecionado (o perfil que iniciou o jogo)
     rc = accountGetPreselectedUser(&uid);
     if (R_SUCCEEDED(rc) && accountUidIsValid(&uid)) {
         outUid = uid;
@@ -46,7 +109,7 @@ bool SaveManager::getActiveAccount(AccountUid& outUid) {
         return true;
     }
 
-    // 3. Fallback: lista todos os usuarios registrados no console
+    // 3. Fallback: enumera todos os usuarios registrados
     s32 userCount = 0;
     AccountUid uids[8];
     if (R_SUCCEEDED(accountListAllUsers(uids, 8, &userCount)) && userCount > 0) {
@@ -72,10 +135,7 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
         return saves;
     }
 
-    // Inicializa NS para obtencao dos metadados dos jogos (nomes)
     bool nsInitialized = R_SUCCEEDED(nsInitialize());
-
-    // Aloca buffer para controle NACP dinamicamente no Heap para evitar estourar a stack (~144KB)
     NsApplicationControlData* ctlData = nullptr;
     if (nsInitialized) {
         ctlData = static_cast<NsApplicationControlData*>(malloc(sizeof(NsApplicationControlData)));
@@ -89,14 +149,12 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
         if (R_FAILED(rc) || totalRead <= 0) break;
 
         for (s64 i = 0; i < totalRead; i++) {
-            // Filtra apenas saves de conta do usuario especificado e ignora Title ID 0
             if (infoBuf[i].save_data_type != FsSaveDataType_Account) continue;
             if (infoBuf[i].application_id == 0) continue;
             if (memcmp(&infoBuf[i].uid, &uid, sizeof(AccountUid)) != 0) continue;
 
             u64 tid = infoBuf[i].application_id;
 
-            // Evita duplicatas se houver mais de um registro do mesmo Title ID
             bool alreadyInList = false;
             for (const auto& existing : saves) {
                 if (existing.titleId == tid) {
@@ -111,7 +169,6 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
             item.saveSize = infoBuf[i].size;
             item.selected = false;
 
-            // Tenta obter o nome legivel do jogo via NACP
             std::string gameTitle;
             if (nsInitialized && ctlData) {
                 memset(ctlData, 0, sizeof(NsApplicationControlData));
@@ -134,7 +191,6 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
                 }
             }
 
-            // Fallback para formatacao hexadecimal do Title ID se nao encontrar o nome
             if (gameTitle.empty()) {
                 char tidBuf[32];
                 snprintf(tidBuf, sizeof(tidBuf), "Title 0x%016llX", (unsigned long long)tid);
@@ -146,12 +202,8 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
         }
     }
 
-    if (ctlData) {
-        free(ctlData);
-    }
-    if (nsInitialized) {
-        nsExit();
-    }
+    if (ctlData) free(ctlData);
+    if (nsInitialized) nsExit();
     fsSaveDataInfoReaderClose(&reader);
 
     return saves;
@@ -159,16 +211,13 @@ std::vector<GameSaveInfo> SaveManager::listAvailableSaves(AccountUid uid) {
 
 bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZipPath, bool& outChanged, bool forceArchive) {
     outChanged = false;
+    u64 baseTid = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
 
-    // Se o titleId fornecido contiver a flag de update/patch (bit 11), normaliza para a base
-    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
-
-    // 1. Abre leitor de informacoes de saves para localizar a particao
     FsSaveDataInfoReader reader;
     Result rc = fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User);
     if (R_FAILED(rc)) {
         Logger::logSync("[%016llX] Mount save: FAILED [Code: 0x%08X] (fsOpenSaveDataInfoReader)",
-                        (unsigned long long)baseTitleId, (unsigned int)rc);
+                        (unsigned long long)baseTid, (unsigned int)rc);
         return false;
     }
 
@@ -176,7 +225,7 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
     bool exactUidFound = false;
     bool deviceSaveFound = false;
     AccountUid targetUid = uid;
-    u64 targetTitleId = baseTitleId;
+    u64 targetTitleId = baseTid;
     s64 totalRead = 0;
     FsSaveDataInfo infoBuf[16];
 
@@ -188,7 +237,7 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
             u64 appTid = infoBuf[i].application_id;
             u64 appBaseTid = ((appTid & 0x800ULL) != 0) ? (appTid & ~0x800ULL) : appTid;
 
-            if (appTid == titleId || appBaseTid == baseTitleId) {
+            if (appTid == titleId || appBaseTid == baseTid) {
                 targetTitleId = appTid;
                 if (infoBuf[i].save_data_type == FsSaveDataType_Account) {
                     accountSaveFound = true;
@@ -197,7 +246,7 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
                         targetUid = uid;
                         break;
                     } else if (!exactUidFound) {
-                        targetUid = infoBuf[i].uid; // Salva perfil existente como fallback
+                        targetUid = infoBuf[i].uid;
                     }
                 } else if (infoBuf[i].save_data_type == FsSaveDataType_Device) {
                     deviceSaveFound = true;
@@ -210,99 +259,57 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
 
     if (!accountSaveFound && !deviceSaveFound) {
         Logger::logSync("[%016llX] Mount save: FAILED (No save data exists for this title)",
-                        (unsigned long long)baseTitleId);
+                        (unsigned long long)baseTid);
         return false;
     }
 
-    bool isDeviceSave = (!accountSaveFound && deviceSaveFound);
+    bool isDevice = (!accountSaveFound && deviceSaveFound);
 
-    // 2. Retry loop com backoff seguro caso a partição esteja com file lock do Horizon OS
-    bool mounted = false;
+    // Montagem estritamente READ-ONLY
     rc = 0;
-    for (int attempt = 1; attempt <= 3; ++attempt) {
-        if (isDeviceSave) {
-            rc = fsdevMountDeviceSaveData("save", targetTitleId);
-        } else {
-            rc = fsdevMountSaveDataReadOnly("save", targetTitleId, targetUid);
-            if (R_FAILED(rc)) {
-                rc = fsdevMountSaveData("save", targetTitleId, targetUid);
-            }
-        }
-
-        if (R_SUCCEEDED(rc)) {
-            mounted = true;
-            break;
-        }
-
-        if (attempt < 3) {
-            Logger::logSync("[%016llX] Mount save attempt %d: BUSY/FAILED [Code: 0x%08X]. Retrying...",
-                            (unsigned long long)baseTitleId, attempt, (unsigned int)rc);
-            svcSleepThread(1'500'000'000ULL * attempt);
-        }
+    if (isDevice) {
+        rc = fsdevMountDeviceSaveData("save", targetTitleId);
+    } else {
+        rc = fsdevMountSaveDataReadOnly("save", targetTitleId, targetUid);
     }
 
-    if (!mounted) {
-        Logger::logSync("[%016llX] Mount save: FAILED [Code: 0x%08X]",
-                        (unsigned long long)baseTitleId, (unsigned int)rc);
+    if (R_FAILED(rc)) {
+        Logger::logSync("[%016llX] Mount save READONLY: FAILED [Code: 0x%08X]",
+                        (unsigned long long)baseTid, (unsigned int)rc);
         return false;
     }
 
-    Logger::logSync("[%016llX] Mount save: SUCCESS", (unsigned long long)baseTitleId);
-
-    // 3. Valida se a partição possui arquivos válidos dentro
     std::vector<std::string> fileList;
     ZipHelper::listFilesRecursive("save:/", "", fileList);
-
     if (fileList.empty()) {
-        Logger::logSync("[%016llX] Mount save: FAILED (save:/ is empty, 0 files found)",
-                        (unsigned long long)baseTitleId);
+        Logger::logSync("[%016llX] Mount save: FAILED (0 files found)", (unsigned long long)baseTid);
         fsdevUnmountDevice("save");
         return false;
     }
 
-    // Formata nome do arquivo de destino
     char filename[128];
-    snprintf(filename, sizeof(filename), "%s/save_%016llx.zip", Config::TEMP_DIR.c_str(), (unsigned long long)baseTitleId);
+    snprintf(filename, sizeof(filename), "%s/save_%016llx.zip", Config::TEMP_DIR.c_str(), (unsigned long long)baseTid);
     outZipPath = filename;
 
-    // 4. Compacta o diretorio montado "save:/" diretamente para o SDMC
     bool zipOk = ZipHelper::zipDirectory("save:/", outZipPath);
-
-    // 5. Desmonta o save imediatamente apos terminar a leitura
     fsdevUnmountDevice("save");
 
     if (!zipOk) {
-        Logger::logSync("[%016llX] Failed to create ZIP archive.", (unsigned long long)baseTitleId);
         remove(outZipPath.c_str());
         return false;
     }
 
-    // 6. Calcula o CRC32 e tamanho do .zip gerado para checar alteracao
     u32 currentCrc = 0;
     if (!ZipHelper::calculateFileCrc32(outZipPath, currentCrc)) {
-        Logger::logSync("[%016llX] Failed to calculate CRC32 of generated ZIP.", (unsigned long long)baseTitleId);
         remove(outZipPath.c_str());
         return false;
     }
 
-    struct stat st;
-    off_t fileSize = 0;
-    if (stat(outZipPath.c_str(), &st) == 0) {
-        fileSize = st.st_size;
-    }
-
-    Logger::logSync("[%016llX] ZIP generated: %s (CRC: 0x%08X, Size: %lld bytes)",
-                    (unsigned long long)baseTitleId, outZipPath.c_str(), (unsigned int)currentCrc, (long long)fileSize);
-
-    auto it = m_savedCrcs.find(baseTitleId);
+    auto it = m_savedCrcs.find(baseTid);
     if (forceArchive || it == m_savedCrcs.end() || it->second != currentCrc) {
-        // Houve alteracao nos dados ou upload manual forcado!
         outChanged = true;
         return true;
     } else {
-        // Save identico ao do backup anterior; apaga o zip temporario
-        Logger::logSync("[%016llX] Save unchanged (CRC identical to last backup). Skipping upload.",
-                        (unsigned long long)baseTitleId);
         remove(outZipPath.c_str());
         outChanged = false;
         return true;
@@ -310,11 +317,446 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
 }
 
 void SaveManager::markSaveUploaded(u64 titleId, u32 crc) {
-    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
-    m_savedCrcs[baseTitleId] = crc;
-    m_timestamps[baseTitleId] = std::time(nullptr);
+    u64 baseTid = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
+    m_savedCrcs[baseTid] = crc;
+    m_timestamps[baseTid] = std::time(nullptr);
     saveState();
     saveTimestamps();
+}
+
+void SaveManager::OnProcessExit(u64 titleId) {
+    if (m_state == SyncState::DISABLED) return;
+
+    m_currentTitleId = titleId;
+    m_baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
+    m_state = SyncState::PROCESS_EXIT_DETECTED;
+
+    Logger::logSync("[%016llX] Process terminated", (unsigned long long)m_baseTitleId);
+}
+
+void SaveManager::HandleProcessExitDetected(GDriveClient& gdrive) {
+    if (m_currentTitleId == 0) {
+        m_state = SyncState::IDLE;
+        return;
+    }
+
+    // Valida se o TitleID e elegivel conforme politica de sincronizacao
+    if (!gdrive.isTitleTracked(m_baseTitleId)) {
+        Logger::logSync("[%016llX] Game ignored by whitelist.", (unsigned long long)m_baseTitleId);
+        m_state = SyncState::CLEANUP;
+        return;
+    }
+
+    m_lockWaitTicks = 0;
+    m_mountRetryAttempts = 0;
+    m_state = SyncState::WAIT_LOCKS;
+}
+
+void SaveManager::HandleWaitLocks() {
+    // Horizon OS necessita de um delay protetivo de 3 a 5 segundos para liberar os descritores de arquivo
+    m_lockWaitTicks++;
+    if (m_lockWaitTicks >= 35) { // 35 * 100ms = 3.5 segundos
+        m_state = SyncState::MOUNT_READONLY;
+    }
+}
+
+void SaveManager::HandleMountReadOnly() {
+    m_mountRetryAttempts++;
+
+    // 1. Identifica o usuario ativo
+    if (!getActiveAccount(m_currentUid)) {
+        Logger::logSync("[%016llX] FAILED: Could not obtain active user account.", (unsigned long long)m_baseTitleId);
+        m_state = SyncState::FAILURE_RECOVERY;
+        return;
+    }
+    m_currentUidStr = formatUid(m_currentUid);
+
+    // 2. Localiza informacoes de particao de save
+    FsSaveDataInfoReader reader;
+    Result rc = fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User);
+    if (R_FAILED(rc)) {
+        Logger::logSync("[%016llX] Mount save: FAILED [Code: 0x%08X] (fsOpenSaveDataInfoReader)",
+                        (unsigned long long)m_baseTitleId, (unsigned int)rc);
+        m_state = SyncState::FAILURE_RECOVERY;
+        return;
+    }
+
+    bool accountSaveFound = false;
+    bool exactUidFound = false;
+    bool deviceSaveFound = false;
+    AccountUid targetUid = m_currentUid;
+    u64 targetTitleId = m_baseTitleId;
+    s64 totalRead = 0;
+    FsSaveDataInfo infoBuf[16];
+
+    while (true) {
+        rc = fsSaveDataInfoReaderRead(&reader, infoBuf, 16, &totalRead);
+        if (R_FAILED(rc) || totalRead == 0) break;
+
+        for (s64 i = 0; i < totalRead; i++) {
+            u64 appTid = infoBuf[i].application_id;
+            u64 appBaseTid = ((appTid & 0x800ULL) != 0) ? (appTid & ~0x800ULL) : appTid;
+
+            if (appTid == m_currentTitleId || appBaseTid == m_baseTitleId) {
+                targetTitleId = appTid;
+                if (infoBuf[i].save_data_type == FsSaveDataType_Account) {
+                    accountSaveFound = true;
+                    if (memcmp(&infoBuf[i].uid, &m_currentUid, sizeof(AccountUid)) == 0) {
+                        exactUidFound = true;
+                        targetUid = m_currentUid;
+                        break;
+                    } else if (!exactUidFound) {
+                        targetUid = infoBuf[i].uid;
+                    }
+                } else if (infoBuf[i].save_data_type == FsSaveDataType_Device) {
+                    deviceSaveFound = true;
+                }
+            }
+        }
+        if (exactUidFound) break;
+    }
+    fsSaveDataInfoReaderClose(&reader);
+
+    if (!accountSaveFound && !deviceSaveFound) {
+        Logger::logSync("[%016llX] Mount save: FAILED (No save data exists for this title)",
+                        (unsigned long long)m_baseTitleId);
+        m_state = SyncState::CLEANUP;
+        return;
+    }
+
+    m_isDeviceSave = (!accountSaveFound && deviceSaveFound);
+
+    // 3. Montagem estritamente READ-ONLY da particao
+    rc = 0;
+    if (m_isDeviceSave) {
+        rc = fsdevMountDeviceSaveData("save", targetTitleId);
+    } else {
+        rc = fsdevMountSaveDataReadOnly("save", targetTitleId, targetUid);
+    }
+
+    if (R_FAILED(rc)) {
+        if (m_mountRetryAttempts < 5) {
+            Logger::logSync("[%016llX] Mount save attempt %d BUSY/FAILED [Code: 0x%08X]. Backing off...",
+                            (unsigned long long)m_baseTitleId, m_mountRetryAttempts, (unsigned int)rc);
+            // Permanece no estado WAIT_LOCKS para tentar novamente
+            m_lockWaitTicks = 20; // aguarda mais 1.5s
+            m_state = SyncState::WAIT_LOCKS;
+            return;
+        } else {
+            Logger::logSync("[%016llX] Mount save: FAILED after retries [Code: 0x%08X]",
+                            (unsigned long long)m_baseTitleId, (unsigned int)rc);
+            m_state = SyncState::FAILURE_RECOVERY;
+            return;
+        }
+    }
+
+    // 4. Validacao: a particao deve conter arquivos validos
+    std::vector<std::string> fileList;
+    ZipHelper::listFilesRecursive("save:/", "", fileList);
+    if (fileList.empty()) {
+        Logger::logSync("[%016llX] Mount save: FAILED (save:/ is empty, 0 files found)",
+                        (unsigned long long)m_baseTitleId);
+        fsdevUnmountDevice("save");
+        m_state = SyncState::CLEANUP;
+        return;
+    }
+
+    m_currentFileCount = fileList.size();
+    Logger::logSync("[%016llX] Mount save READONLY: SUCCESS (%zu files found)",
+                    (unsigned long long)m_baseTitleId, m_currentFileCount);
+
+    m_state = SyncState::SNAPSHOT_PREPARE;
+}
+
+void SaveManager::HandleSnapshotPrepare() {
+    isConsoleClockSane(&m_currentTimestamp);
+    if (m_currentTimestamp < MIN_SANE_RTC_TIMESTAMP) {
+        m_currentTimestamp = std::time(nullptr);
+    }
+
+    Config::ensureDirectories();
+    m_state = SyncState::COMPRESS;
+}
+
+void SaveManager::HandleCompress() {
+    char tempStaging[256];
+    snprintf(tempStaging, sizeof(tempStaging), "%s/staging_%016llx.zip",
+             Config::TEMP_DIR.c_str(), (unsigned long long)m_baseTitleId);
+
+    // 1. Compacta save:/ diretamente para o staging no SDMC em blocos seguros de 32KB
+    bool zipOk = ZipHelper::zipDirectory("save:/", tempStaging);
+
+    // 2. Desmonta a particao imediatamente apos terminar a leitura
+    fsdevUnmountDevice("save");
+
+    if (!zipOk) {
+        Logger::logSync("[%016llX] Failed to create ZIP archive.", (unsigned long long)m_baseTitleId);
+        remove(tempStaging);
+        m_state = SyncState::FAILURE_RECOVERY;
+        return;
+    }
+
+    // 3. Calcula o CRC32 do snapshot gerado
+    m_currentCrc = 0;
+    if (!ZipHelper::calculateFileCrc32(tempStaging, m_currentCrc)) {
+        Logger::logSync("[%016llX] Failed to calculate CRC32 of generated ZIP.", (unsigned long long)m_baseTitleId);
+        remove(tempStaging);
+        m_state = SyncState::FAILURE_RECOVERY;
+        return;
+    }
+
+    // 4. Verifica se houve alteracao real de conteudo em relacao ao backup anterior
+    auto it = m_savedCrcs.find(m_baseTitleId);
+    if (it != m_savedCrcs.end() && it->second == m_currentCrc) {
+        Logger::logSync("[%016llX] Save unchanged (CRC identical 0x%08X). Skipping upload.",
+                        (unsigned long long)m_baseTitleId, m_currentCrc);
+        remove(tempStaging);
+        m_state = SyncState::CLEANUP;
+        return;
+    }
+
+    // 5. Nomeia o snapshot com padrao append-only:
+    // <TitleID>_<AccountUid>_<TimestampUTC>_<CRC32>.zip
+    char snapshotName[256];
+    snprintf(snapshotName, sizeof(snapshotName), "%016llX_%s_%lld_%08X.zip",
+             (unsigned long long)m_baseTitleId,
+             m_currentUidStr.c_str(),
+             (long long)m_currentTimestamp,
+             m_currentCrc);
+
+    char finalSnapshotPath[384];
+    snprintf(finalSnapshotPath, sizeof(finalSnapshotPath), "%s/%s",
+             Config::TEMP_DIR.c_str(), snapshotName);
+
+    remove(finalSnapshotPath);
+    rename(tempStaging, finalSnapshotPath);
+    m_snapshotZipPath = finalSnapshotPath;
+
+    // 6. Registra o snapshot na fila persistente de upload em disco
+    char jobIdBuf[128];
+    snprintf(jobIdBuf, sizeof(jobIdBuf), "%016llX_%lld_%08X",
+             (unsigned long long)m_baseTitleId, (long long)m_currentTimestamp, m_currentCrc);
+    m_currentJobId = jobIdBuf;
+
+    PendingUploadJob job;
+    job.jobId = m_currentJobId;
+    job.titleId = m_baseTitleId;
+    job.uid = m_currentUid;
+    job.accountUidStr = m_currentUidStr;
+    job.timestampUtc = m_currentTimestamp;
+    job.crc32 = m_currentCrc;
+    job.fileCount = m_currentFileCount;
+    job.zipPath = m_snapshotZipPath;
+    job.retryCount = 0;
+
+    savePendingJob(job);
+
+    Logger::logSync("[%016llX] Snapshot created: %s (CRC: 0x%08X, %zu files). Enqueued for upload.",
+                    (unsigned long long)m_baseTitleId, snapshotName, m_currentCrc, m_currentFileCount);
+
+    m_state = SyncState::UPLOAD;
+}
+
+void SaveManager::HandleUpload(GDriveClient& gdrive) {
+    FlushPendingUploads(gdrive);
+    m_state = SyncState::CLEANUP;
+}
+
+void SaveManager::HandleCleanup() {
+    fsdevUnmountDevice("save");
+
+    m_currentTitleId = 0;
+    m_baseTitleId = 0;
+    m_currentUid = {};
+    m_currentUidStr.clear();
+    m_isDeviceSave = false;
+    m_currentTimestamp = 0;
+    m_currentCrc = 0;
+    m_currentFileCount = 0;
+    m_snapshotZipPath.clear();
+    m_currentJobId.clear();
+    m_lockWaitTicks = 0;
+    m_mountRetryAttempts = 0;
+    m_recoveryAttempts = 0;
+
+    m_state = SyncState::IDLE;
+}
+
+void SaveManager::HandleFailureRecovery() {
+    fsdevUnmountDevice("save");
+    m_recoveryAttempts++;
+
+    Logger::logSync("[%016llX] Failure recovery step (attempt %d). Retaining pending jobs on SD.",
+                    (unsigned long long)m_baseTitleId, m_recoveryAttempts);
+
+    // Retorna para IDLE para nao travar o console; se houver pendencias, TryFlushPending tentara reenviar
+    m_state = SyncState::IDLE;
+}
+
+void SaveManager::TryFlushPending(GDriveClient& gdrive) {
+    m_lastFlushTick++;
+    if (m_lastFlushTick >= 100) { // a cada ~10 segundos em repouso
+        m_lastFlushTick = 0;
+        FlushPendingUploads(gdrive);
+    }
+}
+
+bool SaveManager::FlushPendingUploads(GDriveClient& gdrive) {
+    std::vector<PendingUploadJob> pending = loadPendingJobs();
+    if (pending.empty()) return true;
+
+    if (!gdrive.isConfigured() || !gdrive.isAuthorized()) {
+        return false;
+    }
+
+    // 1. Garante que a raiz "Switch Saves" exista no Drive
+    std::string rootFolderId = gdrive.ensureFolderExists(Config::DEFAULT_FOLDER_NAME);
+    if (rootFolderId.empty()) {
+        return false;
+    }
+
+    bool allSuccess = true;
+
+    for (auto& job : pending) {
+        // Valida se o arquivo local do snapshot realmente existe no SD
+        struct stat st;
+        if (stat(job.zipPath.c_str(), &st) != 0 || st.st_size == 0) {
+            removePendingJob(job.jobId);
+            continue;
+        }
+
+        char tidHex[32];
+        snprintf(tidHex, sizeof(tidHex), "%016llX", (unsigned long long)job.titleId);
+
+        // 2. Garante a estrutura versionada de pastas: Switch Saves/<TitleID>/<AccountUid>/
+        std::string titleFolderId = gdrive.ensureSubFolderExists(tidHex, rootFolderId);
+        if (titleFolderId.empty()) {
+            allSuccess = false;
+            continue;
+        }
+
+        std::string accountFolderId = gdrive.ensureSubFolderExists(job.accountUidStr, titleFolderId);
+        if (accountFolderId.empty()) {
+            allSuccess = false;
+            continue;
+        }
+
+        // 3. Extrai nome do snapshot do caminho completo
+        std::string snapshotFileName = job.zipPath;
+        size_t lastSlash = snapshotFileName.find_last_of("/\\");
+        if (lastSlash != std::string::npos) {
+            snapshotFileName = snapshotFileName.substr(lastSlash + 1);
+        }
+
+        // 4. Executa upload para a pasta versionada
+        std::string upErr;
+        bool uploaded = gdrive.uploadSnapshotFile(accountFolderId, snapshotFileName, job.zipPath, &upErr);
+
+        if (uploaded) {
+            // REGRA DE OURO: So deleta o .zip temporario apos confirmacao de sucesso HTTP 200/201 do Google Drive
+            remove(job.zipPath.c_str());
+            removePendingJob(job.jobId);
+
+            markSaveUploaded(job.titleId, job.crc32);
+            setLocalSaveTimestamp(job.titleId, job.timestampUtc);
+
+            Logger::logSync("[%016llX] Snapshot uploaded successfully to Drive versioned folder: %s",
+                            (unsigned long long)job.titleId, snapshotFileName.c_str());
+        } else {
+            allSuccess = false;
+            job.retryCount++;
+            job.lastError = upErr;
+            savePendingJob(job);
+            Logger::logSync("[%016llX] Snapshot upload failed (%s). Retaining in pending queue.",
+                            (unsigned long long)job.titleId, upErr.c_str());
+        }
+    }
+
+    return allSuccess;
+}
+
+bool SaveManager::savePendingJob(const PendingUploadJob& job) {
+    mkdir(Config::PENDING_DIR.c_str(), 0777);
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%s.json", Config::PENDING_DIR.c_str(), job.jobId.c_str());
+
+    FILE* f = fopen(path, "w");
+    if (!f) return false;
+
+    fprintf(f, "{\n");
+    fprintf(f, "  \"job_id\": \"%s\",\n", job.jobId.c_str());
+    fprintf(f, "  \"title_id\": \"%016llx\",\n", (unsigned long long)job.titleId);
+    fprintf(f, "  \"account_uid\": \"%s\",\n", job.accountUidStr.c_str());
+    fprintf(f, "  \"timestamp_utc\": %lld,\n", (long long)job.timestampUtc);
+    fprintf(f, "  \"crc32\": \"%08x\",\n", job.crc32);
+    fprintf(f, "  \"file_count\": %zu,\n", job.fileCount);
+    fprintf(f, "  \"zip_path\": \"%s\",\n", job.zipPath.c_str());
+    fprintf(f, "  \"retry_count\": %d,\n", job.retryCount);
+    fprintf(f, "  \"last_error\": \"%s\"\n", job.lastError.c_str());
+    fprintf(f, "}\n");
+
+    fclose(f);
+    return true;
+}
+
+std::vector<PendingUploadJob> SaveManager::loadPendingJobs() {
+    std::vector<PendingUploadJob> list;
+    DIR* dir = opendir(Config::PENDING_DIR.c_str());
+    if (!dir) return list;
+
+    struct dirent* entry = nullptr;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_REG || entry->d_type == DT_UNKNOWN) {
+            std::string name = entry->d_name;
+            if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
+                std::string fullPath = Config::PENDING_DIR + "/" + name;
+                FILE* f = fopen(fullPath.c_str(), "rb");
+                if (f) {
+                    fseek(f, 0, SEEK_END);
+                    long sz = ftell(f);
+                    fseek(f, 0, SEEK_SET);
+
+                    if (sz > 0 && sz < 8192) {
+                        std::string json(sz, '\0');
+                        fread(json.data(), 1, sz, f);
+                        fclose(f);
+
+                        PendingUploadJob job;
+                        job.jobId = extractJsonField(json, "job_id");
+                        std::string tidStr = extractJsonField(json, "title_id");
+                        job.titleId = std::strtoull(tidStr.c_str(), nullptr, 16);
+                        job.accountUidStr = extractJsonField(json, "account_uid");
+                        job.uid = parseUid(job.accountUidStr);
+                        std::string tsStr = extractJsonField(json, "timestamp_utc");
+                        job.timestampUtc = static_cast<std::time_t>(std::strtoll(tsStr.c_str(), nullptr, 10));
+                        std::string crcStr = extractJsonField(json, "crc32");
+                        job.crc32 = static_cast<u32>(std::strtoul(crcStr.c_str(), nullptr, 16));
+                        std::string cntStr = extractJsonField(json, "file_count");
+                        job.fileCount = static_cast<size_t>(std::strtoull(cntStr.c_str(), nullptr, 10));
+                        job.zipPath = extractJsonField(json, "zip_path");
+                        std::string retryStr = extractJsonField(json, "retry_count");
+                        job.retryCount = std::atoi(retryStr.c_str());
+                        job.lastError = extractJsonField(json, "last_error");
+
+                        if (!job.jobId.empty() && job.titleId != 0 && !job.zipPath.empty()) {
+                            list.push_back(job);
+                        }
+                    } else {
+                        fclose(f);
+                    }
+                }
+            }
+        }
+    }
+    closedir(dir);
+    return list;
+}
+
+bool SaveManager::removePendingJob(const std::string& jobId) {
+    if (jobId.empty()) return false;
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%s.json", Config::PENDING_DIR.c_str(), jobId.c_str());
+    return (remove(path) == 0);
 }
 
 void SaveManager::loadState() {
@@ -430,128 +872,4 @@ bool SaveManager::isConsoleClockSane(std::time_t* outCurrentTime) {
     }
 
     return isTimestampSane(current);
-}
-
-bool SaveManager::restoreGameSave(u64 titleId, AccountUid uid, const std::string& zipPath, std::string* outError) {
-    u64 baseTitleId = ((titleId & 0x800ULL) != 0) ? (titleId & ~0x800ULL) : titleId;
-
-    // 1. Assegura a existencia da pasta de backups no SD
-    mkdir(Config::BACKUP_DIR.c_str(), 0777);
-    char bakPath[256];
-    snprintf(bakPath, sizeof(bakPath), "%s/%016llx_save_backup.bak",
-             Config::BACKUP_DIR.c_str(), (unsigned long long)baseTitleId);
-
-    // 2. Monta o save em modo escrita (read-write) com fallback para Device Saves
-    Result rc = fsdevMountSaveData("save", baseTitleId, uid);
-    if (R_FAILED(rc)) {
-        rc = fsdevMountDeviceSaveData("save", baseTitleId);
-    }
-    if (R_FAILED(rc)) {
-        char errBuf[128];
-        snprintf(errBuf, sizeof(errBuf), "Falha ao montar particao de save para gravacao (rc=0x%X)", rc);
-        if (outError) *outError = errBuf;
-        Logger::logSync("[%016llX] Mount save for restore FAILED (Code: 0x%X)",
-                        (unsigned long long)baseTitleId, rc);
-        return false;
-    }
-
-    // 3. Backup de Seguranca Pré-Restore (Rollback Seguro):
-    // Verifica se ja existem arquivos locais e gera o pacote de seguranca .bak antes de qualquer alteracao
-    std::vector<std::string> existingFiles;
-    ZipHelper::listFilesRecursive("save:/", "", existingFiles);
-    bool hadExistingData = !existingFiles.empty();
-
-    if (hadExistingData) {
-        remove(bakPath); // Remove backup residual antigo se houver
-        if (!ZipHelper::zipDirectory("save:/", bakPath)) {
-            Logger::logSync("[%016llX] WARNING: Failed to create pre-restore backup .bak!",
-                            (unsigned long long)baseTitleId);
-            if (outError) *outError = "Falha ao criar o backup de seguranca antes da restauracao. Operacao abortada.";
-            fsdevUnmountDevice("save");
-            return false;
-        }
-        Logger::logSync("[%016llX] Pre-restore safety backup created: %s (%zu files)",
-                        (unsigned long long)baseTitleId, bakPath, existingFiles.size());
-    }
-
-    // 4. Limpa a particao save:/ para receber os novos arquivos
-    ZipHelper::cleanDirectory("save:/");
-
-    // 5. Descompacta o .zip baixado para a raiz de save:/
-    bool unzipOk = ZipHelper::unzipToDirectory(zipPath, "save:/");
-
-    // 6. Validacao de Sanidade dos arquivos descompactados
-    std::vector<std::string> restoredFiles;
-    if (unzipOk) {
-        ZipHelper::listFilesRecursive("save:/", "", restoredFiles);
-    }
-    bool extractionValid = (unzipOk && !restoredFiles.empty());
-
-    // 7. Commit obrigatorio caso a extracao tenha sido valida
-    Result commitRc = 0;
-    if (extractionValid) {
-        commitRc = fsdevCommitDevice("save");
-    }
-
-    // 8. Tratamento de Falha com ROLLBACK AUTOMATICO
-    if (!extractionValid || R_FAILED(commitRc)) {
-        char failReason[128];
-        if (!unzipOk) {
-            snprintf(failReason, sizeof(failReason), "Descompactacao falhou (arquivo corrompido ou sem espaco)");
-        } else if (restoredFiles.empty()) {
-            snprintf(failReason, sizeof(failReason), "Arquivo zip vazio ou estrutura invalida");
-        } else {
-            snprintf(failReason, sizeof(failReason), "Falha no commit de gravacao (rc=0x%X)", commitRc);
-        }
-
-        Logger::logSync("[%016llX] RESTORE FAILED: %s. Initiating automatic rollback...",
-                        (unsigned long long)baseTitleId, failReason);
-
-        // Executa rollback se possuiamos backup previo
-        if (hadExistingData) {
-            ZipHelper::cleanDirectory("save:/");
-            bool rollbackOk = ZipHelper::unzipToDirectory(bakPath, "save:/");
-            if (rollbackOk) {
-                fsdevCommitDevice("save");
-                Logger::logSync("[%016llX] ROLLBACK COMPLETED: Original local save restored successfully.",
-                                (unsigned long long)baseTitleId);
-                if (outError) {
-                    *outError = std::string("Falha ao restaurar save da nuvem (") + failReason + 
-                                "). ROLLBACK CONCLUIDO: Seus arquivos locais foram restaurados com seguranca.";
-                }
-            } else {
-                Logger::logSync("[%016llX] CRITICAL: Rollback failed to unpack .bak!",
-                                (unsigned long long)baseTitleId);
-                if (outError) {
-                    *outError = "Erro critico na restauracao e falha ao descompactar backup de retorno.";
-                }
-            }
-        } else {
-            if (outError) *outError = std::string("Falha ao restaurar save: ") + failReason;
-        }
-
-        fsdevUnmountDevice("save");
-        return false;
-    }
-
-    // 9. Sucesso 100%: desmonta particao, atualiza CRC e remove o .bak temporario
-    fsdevUnmountDevice("save");
-
-    if (hadExistingData) {
-        remove(bakPath);
-        Logger::logSync("[%016llX] Restore successful (%zu files committed). Temporary .bak removed.",
-                        (unsigned long long)baseTitleId, restoredFiles.size());
-    } else {
-        Logger::logSync("[%016llX] Restore successful (%zu files committed).",
-                        (unsigned long long)baseTitleId, restoredFiles.size());
-    }
-
-    // Atualiza o CRC salvo para que o sysmodule nao re-envie o save recem-restaurado
-    u32 newCrc = 0;
-    if (ZipHelper::calculateFileCrc32(zipPath, newCrc)) {
-        m_savedCrcs[baseTitleId] = newCrc;
-        saveState();
-    }
-
-    return true;
 }
