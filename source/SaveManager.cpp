@@ -419,7 +419,7 @@ bool SaveManager::isTimestampSane(std::time_t ts) {
 bool SaveManager::isConsoleClockSane(std::time_t* outCurrentTime) {
     std::time_t current = 0;
     u64 switchPosixTime = 0;
-    if (R_SUCCEEDED(timeGetCurrentTime(&switchPosixTime)) && switchPosixTime > 0) {
+    if (R_SUCCEEDED(timeGetCurrentTime(TimeType_UserSystemClock, &switchPosixTime)) && switchPosixTime > 0) {
         current = static_cast<std::time_t>(switchPosixTime);
     } else {
         current = std::time(nullptr);
