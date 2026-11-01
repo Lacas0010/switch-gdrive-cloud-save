@@ -20,8 +20,8 @@ extern "C" {
     u32 __nx_applet_type = AppletType_None;
     u32 __nx_fs_num_sessions = 1;
 
-    // Heap estatico de 3.5MB no .bss (economiza RAM do System Pool do Horizon OS mantendo espaco para TLS/SSL/Sockets)
-    #define INNER_HEAP_SIZE 0x380000 // 3.5 MiB
+    // Heap estatico de 1.5MB no .bss (economiza RAM do System Pool do Horizon OS)
+    #define INNER_HEAP_SIZE 0x180000 // 1.5 MiB
 
     void __libnx_initheap(void) {
         static u8 inner_heap[INNER_HEAP_SIZE];
