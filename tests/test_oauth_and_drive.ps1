@@ -119,3 +119,4 @@ if (($testResults | Where-Object { $_.Status -eq "FAIL" }).Count -gt 0) {
     exit 1
 }
 exit 0
+

@@ -788,8 +788,8 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     Logger::logSync("[%016llX] Google Drive API: HTTP %ld (File ID: %s, Action: %s)",
                     (unsigned long long)titleId, httpCode, retFileId.c_str(), isUpdate ? "PATCH" : "POST");
 
-    // Remove o zip temporario apenas apos confirmacao de sucesso HTTP 2xx
-    remove(zipPath.c_str());
+    // Regra de ouro: Arquivo enviado com sucesso (HTTP 200/201). O arquivo ZIP
+    // e deletado exclusivamente pelo caller apos confirmacao de persistencia.
 
     logClient("[UPLOAD] Upload concluido com sucesso para titleId 0x%016llX (%s)",
               (unsigned long long)titleId, isUpdate ? "PATCH" : "POST");

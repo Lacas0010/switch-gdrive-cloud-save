@@ -38,3 +38,4 @@ if ($allPassed) {
     Write-Host "            SOME SUITES REPORTED ISSUES (SEE ABOVE)             " -ForegroundColor Yellow
 }
 Write-Host "=================================================================" -ForegroundColor Magenta
+

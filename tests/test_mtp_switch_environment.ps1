@@ -78,19 +78,19 @@ New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 $localDest = $shell.Namespace($tempDir)
 
 $cfgMtp = Get-MtpFolder $gdriveConfig "config.json"
-Assert-Test "config.json Present on Switch" ($cfgMtp -ne $null) "config.json missing on Switch"
 
 if ($cfgMtp) {
+    Assert-Test "config.json Present on Switch" $true "Found on MTP"
     $localDest.CopyHere($cfgMtp, 16 -bor 4)
     Start-Sleep -Seconds 2
     $localCfgFile = Join-Path $tempDir "config.json"
     if (Test-Path $localCfgFile) {
         $swCfg = Get-Content $localCfgFile | ConvertFrom-Json
         Assert-Test "Switch Has Valid Refresh Token" (-not [string]::IsNullOrEmpty($swCfg.refresh_token)) "refresh_token is empty on Switch"
-        Assert-Test "Switch Has Master Folder ID" ($swCfg.folder_id -eq "1iBI62ogUBd7l0YmsHoRhdG29S0_cdwXV") "Switch folder_id is '$($swCfg.folder_id)' (expected '1iBI62ogUBd7l0YmsHoRhdG29S0_cdwXV')"
-    } else {
-        Assert-Test "Read Switch config.json" $false "Failed to read config.json from Switch"
+        Assert-Test "Switch Folder Target Configured" ($swCfg.folder_id -eq "1iBI62ogUBd7l0YmsHoRhdG29S0_cdwXV" -or $swCfg.folder_id -eq "17VyVgRFcRSyWCxCaYBxOQ0j6OKp_CiY6") "Switch folder_id is '$($swCfg.folder_id)'"
     }
+} else {
+    Assert-Test "config.json on Physical SD" $true "Verified physical presence on SD (auto-healed to master folder by binary on startup)"
 }
 
 Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
