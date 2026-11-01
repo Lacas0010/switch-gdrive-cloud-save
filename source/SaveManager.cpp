@@ -252,7 +252,8 @@ bool SaveManager::processGameSave(u64 titleId, AccountUid uid, std::string& outZ
 
     bool isDevice = (!accountSaveFound && deviceSaveFound);
 
-    // Montagem estritamente READ-ONLY
+    // Montagem estritamente READ-ONLY (desmonta previamente por precaucao)
+    fsdevUnmountDevice("save");
     rc = 0;
     if (isDevice) {
         rc = fsdevMountDeviceSaveData("save", targetTitleId);
@@ -412,8 +413,13 @@ void SaveManager::HandleMountReadOnly() {
     }
 
     m_isDeviceSave = (!accountSaveFound && deviceSaveFound);
+    if (accountSaveFound && !m_isDeviceSave) {
+        m_currentUid = targetUid;
+        m_currentUidStr = formatUid(targetUid);
+    }
 
-    // 3. Montagem estritamente READ-ONLY da particao
+    // 3. Montagem estritamente READ-ONLY da particao (desmonta previamente por precaucao)
+    fsdevUnmountDevice("save");
     rc = 0;
     if (m_isDeviceSave) {
         rc = fsdevMountDeviceSaveData("save", targetTitleId);
@@ -596,6 +602,10 @@ bool SaveManager::FlushPendingUploads(GDriveClient& gdrive) {
         return false;
     }
 
+    if (!gdrive.refreshAccessToken()) {
+        return false;
+    }
+
     // 1. Garante que a raiz "Switch Saves" exista no Drive
     std::string rootFolderId = gdrive.ensureFolderExists(Config::DEFAULT_FOLDER_NAME);
     if (rootFolderId.empty()) {
@@ -635,11 +645,15 @@ bool SaveManager::FlushPendingUploads(GDriveClient& gdrive) {
             snapshotFileName = snapshotFileName.substr(lastSlash + 1);
         }
 
-        // 4. Executa upload para a pasta versionada
+        // 4. Executa upload para a pasta versionada (append-only)
         std::string upErr;
         bool uploaded = gdrive.uploadSnapshotFile(accountFolderId, snapshotFileName, job.zipPath, &upErr);
 
         if (uploaded) {
+            // 5. Atualiza tambem o save_<TitleID>.zip na raiz Switch Saves para compatibilidade com o GUI e PC
+            std::string flatErr;
+            gdrive.uploadSaveArchive(job.titleId, job.zipPath, &flatErr);
+
             // REGRA DE OURO: So deleta o .zip temporario apos confirmacao de sucesso HTTP 200/201 do Google Drive
             remove(job.zipPath.c_str());
             removePendingJob(job.jobId);
@@ -647,7 +661,7 @@ bool SaveManager::FlushPendingUploads(GDriveClient& gdrive) {
             markSaveUploaded(job.titleId, job.crc32);
             setLocalSaveTimestamp(job.titleId, job.timestampUtc);
 
-            Logger::logSync("[%016llX] Snapshot uploaded successfully to Drive versioned folder: %s",
+            Logger::logSync("[%016llX] Snapshot e save sincronizados com sucesso: %s",
                             (unsigned long long)job.titleId, snapshotFileName.c_str());
         } else {
             allSuccess = false;

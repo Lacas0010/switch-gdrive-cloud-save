@@ -17,9 +17,15 @@ config.json
 auth_request.txt
 state.json
 *.tmp
-DIAGNOSTICO_SYSMODULE.md
+temp_check/
+temp_switch_logs/
+temp_drain/
+temp_verify/
+mtp_verify/
 # OS generated files
 .DS_Store
 Thumbs.db
 *.swp
 *.bak
+
+harness/

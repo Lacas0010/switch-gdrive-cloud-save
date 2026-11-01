@@ -89,6 +89,7 @@ RestoreResult RestoreManager::restoreFromLocalZip(
     res.backupPath = bakPath;
 
     // 3. Monta particao de save em modo gravacao (read-write)
+    fsdevUnmountDevice("save");
     Result rc = fsdevMountSaveData("save", baseTitleId, uid);
     if (R_FAILED(rc)) {
         rc = fsdevMountDeviceSaveData("save", baseTitleId);

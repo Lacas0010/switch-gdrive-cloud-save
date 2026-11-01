@@ -372,6 +372,8 @@ void processUploadBatch(Gfx::Display& display,
 
         renderProgress("Compactando save (.zip)...", (static_cast<float>(idx) + 0.3f) / total);
 
+        fsdevUnmountDevice("save");
+
         std::string zipPath;
         bool changed = false;
         // forceArchive = true para que o .zip nao seja apagado mesmo se o CRC for identico
@@ -388,16 +390,38 @@ void processUploadBatch(Gfx::Display& display,
         u32 newCrc = 0;
         ZipHelper::calculateFileCrc32(zipPath, newCrc);
 
+        // 1. Envia como snapshot versionado append-only na pasta: Switch Saves/<TitleID>/<AccountUid>/
+        std::string rootFid = client.ensureFolderExists(Config::DEFAULT_FOLDER_NAME);
+        if (!rootFid.empty()) {
+            char tidHex[32];
+            snprintf(tidHex, sizeof(tidHex), "%016llX", (unsigned long long)item.titleId);
+            std::string tFid = client.ensureSubFolderExists(tidHex, rootFid);
+            if (!tFid.empty()) {
+                std::string uStr = SaveManager::formatUid(uid);
+                std::string aFid = client.ensureSubFolderExists(uStr, tFid);
+                if (!aFid.empty()) {
+                    std::time_t nowTs = std::time(nullptr);
+                    char snapName[256];
+                    snprintf(snapName, sizeof(snapName), "%016llX_%s_%lld_%08X.zip",
+                             (unsigned long long)item.titleId, uStr.c_str(), (long long)nowTs, newCrc);
+                    client.uploadSnapshotFile(aFid, snapName, zipPath, nullptr);
+                }
+            }
+        }
+
+        // 2. Upload/Atualizacao do save na raiz (save_<TitleID>.zip)
         std::string uploadErr;
         bool upOk = client.uploadSaveArchive(item.titleId, zipPath, &uploadErr);
         if (upOk) {
             saveManager.markSaveUploaded(item.titleId, newCrc);
+            saveManager.setLocalSaveTimestamp(item.titleId, std::time(nullptr));
             successCount++;
         } else {
             failCount++;
             std::string errDesc = uploadErr.empty() ? "Falha na transmissao HTTP" : uploadErr;
             failDetails.push_back(item.titleName + " (" + errDesc + ")");
         }
+        remove(zipPath.c_str());
     }
 
     runSummaryModal(display, pad, successCount, failCount, failDetails);

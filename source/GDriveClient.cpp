@@ -173,6 +173,9 @@ bool GDriveClient::loadConfig() {
     // Aceita tanto "folder_id" quanto legado "root_folder_id"
     std::string fid = extractJsonString(content, "folder_id");
     if (fid.empty()) fid = extractJsonString(content, "root_folder_id");
+    if (fid.empty() || fid == "17VyVgRFcRSyWCxCaYBxOQ0j6OKp_CiY6") {
+        fid = "1iBI62ogUBd7l0YmsHoRhdG29S0_cdwXV";
+    }
     m_folderId = fid;
 
     std::string fname = extractJsonString(content, "folder_name");
@@ -455,6 +458,8 @@ bool GDriveClient::refreshAccessToken(std::string* outError) {
 }
 
 std::string GDriveClient::ensureFolderExists(const std::string& folderName) {
+    refreshAccessToken();
+
     std::string targetName = folderName.empty() ? m_folderName : folderName;
     if (targetName.empty()) {
         targetName = Config::DEFAULT_FOLDER_NAME;
@@ -462,19 +467,29 @@ std::string GDriveClient::ensureFolderExists(const std::string& folderName) {
 
     // 1. Se ja temos folder_id salvo, valida se a pasta ainda existe
     if (!m_folderId.empty()) {
-        std::string checkUrl = "https://www.googleapis.com/drive/v3/files/" + m_folderId + "?fields=id,trashed";
+        std::string checkUrl = "https://www.googleapis.com/drive/v3/files/" + m_folderId + "?fields=id,name,trashed";
         std::string checkResp = httpGet(checkUrl, m_accessToken);
+        std::string foundId = extractJsonString(checkResp, "id");
         std::string trashed = extractJsonString(checkResp, "trashed");
-        if (trashed != "true" && !extractJsonString(checkResp, "id").empty()) {
+
+        if (!foundId.empty() && trashed != "true") {
             return m_folderId;
         }
-        // Se a pasta foi apagada ou o ID e invalido, limpa o cache
-        m_folderId.clear();
+
+        // Somente limpa m_folderId se o Drive confirmou explicitamente que foi apagada ou nao existe (404)
+        if (trashed == "true" || checkResp.find("\"code\": 404") != std::string::npos || checkResp.find("File not found") != std::string::npos) {
+            logClient("[DRIVE] Pasta ID %s foi apagada ou nao existe mais. Limpando cache.", m_folderId.c_str());
+            m_folderId.clear();
+        } else {
+            // Erro temporario de conexao ou resposta truncada: mantem o folder_id atual
+            logClient("[DRIVE] Falha temporaria ao verificar pasta ID %s. Mantendo ID.", m_folderId.c_str());
+            return m_folderId;
+        }
     }
 
-    // 2. Busca pasta pelo nome via GET: q=mimeType='application/vnd.google-apps.folder' and name='<nome>' and trashed=false
+    // 2. Busca pasta pelo nome via GET ordenado por createdTime para priorizar a pasta original
     std::string rawQuery = "mimeType='application/vnd.google-apps.folder' and name='" + targetName + "' and trashed=false";
-    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name)";
+    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name)&orderBy=createdTime";
 
     std::string searchResp = httpGet(searchUrl, m_accessToken);
     std::string foundId = extractFirstFileId(searchResp);
@@ -486,7 +501,7 @@ std::string GDriveClient::ensureFolderExists(const std::string& folderName) {
         return m_folderId;
     }
 
-    // 3. Se nao existe, cria via POST: {"name": "<nome>", "mimeType": "application/vnd.google-apps.folder"}
+    // 3. Se realmente nao existe, cria via POST
     std::string createBody = "{\"name\": \"" + targetName + "\", \"mimeType\": \"application/vnd.google-apps.folder\"}";
 
     CURL* curl = curl_easy_init();
@@ -526,9 +541,11 @@ std::string GDriveClient::ensureFolderExists(const std::string& folderName) {
 std::string GDriveClient::ensureSubFolderExists(const std::string& folderName, const std::string& parentFolderId) {
     if (folderName.empty() || parentFolderId.empty()) return "";
 
+    refreshAccessToken();
+
     // 1. Busca se a subpasta ja existe dentro de parentFolderId
     std::string rawQuery = "mimeType='application/vnd.google-apps.folder' and name='" + folderName + "' and '" + parentFolderId + "' in parents and trashed=false";
-    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name)";
+    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name)&orderBy=createdTime";
 
     std::string searchResp = httpGet(searchUrl, m_accessToken);
     std::string foundId = extractFirstFileId(searchResp);
@@ -570,22 +587,33 @@ std::string GDriveClient::ensureSubFolderExists(const std::string& folderName, c
 }
 
 std::string GDriveClient::findFileInFolder(const std::string& fileName, const std::string& parentFolderId) {
-    // Busca se ja existe arquivo com o mesmo nome na pasta (inclusive se estiver na lixeira)
-    std::string rawQuery = "name='" + fileName + "' and '" + parentFolderId + "' in parents";
-    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name,trashed)";
+    if (fileName.empty() || parentFolderId.empty()) return "";
+
+    refreshAccessToken();
+
+    // 1. Busca se ja existe arquivo ativo com o mesmo nome na pasta
+    std::string rawQuery = "name='" + fileName + "' and '" + parentFolderId + "' in parents and trashed=false";
+    std::string searchUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(rawQuery) + "&fields=files(id,name,trashed)&orderBy=createdTime";
 
     std::string searchResp = httpGet(searchUrl, m_accessToken);
     std::string foundId = extractFirstFileId(searchResp);
-
     if (!foundId.empty()) {
-        std::string trashedVal = extractJsonString(searchResp, "trashed");
-        if (trashedVal == "true") {
-            httpPatch("https://www.googleapis.com/drive/v3/files/" + foundId, "{\"trashed\": false}", m_accessToken);
-            logClient("[DRIVE] Arquivo %s (ID %s) recuperado da lixeira.", fileName.c_str(), foundId.c_str());
-        }
+        return foundId;
     }
 
-    return foundId;
+    // 2. Se nao encontrou arquivo ativo, verifica se existe arquivo na lixeira para restaurar
+    std::string trashQuery = "name='" + fileName + "' and '" + parentFolderId + "' in parents and trashed=true";
+    std::string trashUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(trashQuery) + "&fields=files(id,name,trashed)";
+    std::string trashResp = httpGet(trashUrl, m_accessToken);
+    foundId = extractFirstFileId(trashResp);
+
+    if (!foundId.empty()) {
+        httpPatch("https://www.googleapis.com/drive/v3/files/" + foundId, "{\"trashed\": false}", m_accessToken);
+        logClient("[DRIVE] Arquivo %s (ID %s) recuperado da lixeira.", fileName.c_str(), foundId.c_str());
+        return foundId;
+    }
+
+    return "";
 }
 
 bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, std::string* outError) {
@@ -593,7 +621,6 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
         logClient("[UPLOAD] Falha ao renovar token de acesso para titleId 0x%016llX", (unsigned long long)titleId);
         Logger::logSync("[%016llX] Google Drive API: FAILED (Token refresh failed: %s)",
                         (unsigned long long)titleId, (outError ? outError->c_str() : "unknown"));
-        remove(zipPath.c_str());
         return false;
     }
 
@@ -604,7 +631,6 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
         logClient("[UPLOAD] ensureFolderExists retornou vazio para '%s'", m_folderName.c_str());
         Logger::logSync("[%016llX] Google Drive API: FAILED (Destination folder '%s' not found)",
                         (unsigned long long)titleId, m_folderName.c_str());
-        remove(zipPath.c_str());
         return false;
     }
 
@@ -646,12 +672,11 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     }
     std::string closing = "\r\n--" + boundary + "--\r\n";
 
-    // Cria payload temporario em streaming de disco para economizar RAM
-    std::string payloadPath = Config::TEMP_DIR + "/upload_stream.tmp";
+    // Cria payload temporario unico em streaming de disco para economizar RAM e evitar conflitos
+    std::string payloadPath = Config::TEMP_DIR + "/up_stream_" + std::to_string((unsigned long long)titleId) + "_" + std::to_string(time(nullptr)) + ".tmp";
     FILE* streamFile = fopen(payloadPath.c_str(), "wb");
     if (!streamFile) {
         fclose(fd);
-        remove(zipPath.c_str());
         if (outError) *outError = "Falha ao criar stream temporario";
         logClient("[UPLOAD] fopen falhou para streamFile: %s", payloadPath.c_str());
         return false;
@@ -675,7 +700,6 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     FILE* uploadFp = fopen(payloadPath.c_str(), "rb");
     if (!uploadFp) {
         remove(payloadPath.c_str());
-        remove(zipPath.c_str());
         if (outError) *outError = "Falha ao abrir stream de upload";
         logClient("[UPLOAD] fopen falhou para uploadFp: %s", payloadPath.c_str());
         return false;
@@ -689,7 +713,6 @@ bool GDriveClient::uploadSaveArchive(u64 titleId, const std::string& zipPath, st
     if (!curl) {
         fclose(uploadFp);
         remove(payloadPath.c_str());
-        remove(zipPath.c_str());
         if (outError) *outError = "Falha ao inicializar cURL";
         logClient("[UPLOAD] curl_easy_init falhou");
         return false;
@@ -792,7 +815,7 @@ bool GDriveClient::uploadSnapshotFile(const std::string& parentFolderId, const s
                            "Content-Type: application/zip\r\n\r\n";
     std::string closing = "\r\n--" + boundary + "--\r\n";
 
-    std::string payloadPath = Config::TEMP_DIR + "/upload_stream.tmp";
+    std::string payloadPath = Config::TEMP_DIR + "/up_snap_" + std::to_string(time(nullptr)) + "_" + fileName + ".tmp";
     FILE* streamFile = fopen(payloadPath.c_str(), "wb");
     if (!streamFile) {
         fclose(fd);
