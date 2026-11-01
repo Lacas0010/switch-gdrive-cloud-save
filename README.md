@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.6-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.6" />
+  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.7-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.7" />
   <img src="https://img.shields.io/badge/Plataforma-Nintendo%20Switch-E60012?style=for-the-badge&logo=nintendo-switch&logoColor=white" alt="Nintendo Switch" />
   <img src="https://img.shields.io/badge/CFW-Atmosph%C3%A8re%201.7%2B-00D2FF?style=for-the-badge" alt="Atmosphere" />
   <img src="https://img.shields.io/badge/Google-Drive%20API%20v3-4285F4?style=for-the-badge&logo=googledrive&logoColor=white" alt="Google Drive" />
@@ -24,16 +24,17 @@
 
 ## 📌 Sumário
 1. [Visão Geral](#-visão-geral)
-2. [Novidades da Versão 0.0.6](#-novidades-da-versão-006)
-3. [Componentes da Suite](#-componentes-da-suite)
-4. [Como Funciona (Arquitetura)](#-como-funciona-arquitetura)
-5. [Instalação Rápida no Cartão SD](#-instalação-rápida-no-cartão-sd)
-6. [Configuração das Credenciais do Google Drive](#-configuração-das-credenciais-do-google-drive)
-7. [Vinculando sua Conta pelo Switch](#-vinculando-sua-conta-pelo-switch)
-8. [Controles e Navegação do Aplicativo](#-controles-e-navegação-do-aplicativo)
-9. [Certificados SSL e Criptografia](#-certificados-ssl-e-criptografia)
-10. [Perguntas Frequentes e Resolução de Problemas](#-perguntas-frequentes-e-resolução-de-problemas)
-11. [Como Compilar do Código-Fonte](#-como-compilar-do-código-fonte)
+2. [Novidades da Versão 0.0.7](#-novidades-da-versão-007)
+3. [Novidades da Versão 0.0.6](#-novidades-da-versão-006)
+4. [Componentes da Suite](#-componentes-da-suite)
+5. [Como Funciona (Arquitetura)](#-como-funciona-arquitetura)
+6. [Instalação Rápida no Cartão SD](#-instalação-rápida-no-cartão-sd)
+7. [Configuração das Credenciais do Google Drive](#-configuração-das-credenciais-do-google-drive)
+8. [Vinculando sua Conta pelo Switch](#-vinculando-sua-conta-pelo-switch)
+9. [Controles e Navegação do Aplicativo](#-controles-e-navegação-do-aplicativo)
+10. [Certificados SSL e Criptografia](#-certificados-ssl-e-criptografia)
+11. [Perguntas Frequentes e Resolução de Problemas](#-perguntas-frequentes-e-resolução-de-problemas)
+12. [Como Compilar do Código-Fonte](#-como-compilar-do-código-fonte)
 
 ---
 
@@ -50,6 +51,28 @@ O **Google Drive Cloud Save Suite** transforma o seu Nintendo Switch desbloquead
 * 📶 **Resiliência a Comunicação Local (LDN / Y-Comm):** Suporte nativo e automático a jogos como *Pokémon Sword/Shield* e *Animal Crossing*, aguardando a reconexão com a rede Wi-Fi residencial antes do upload.
 * 💾 **Fila Offline com Auto-Recuperação:** Se o console estiver offline no momento do fechamento, o save é enfileirado no cartão SD e enviado em segundo plano assim que a conexão retornar, inclusive sobrevivendo a reinicializações.
 * 🎨 **Interface Gráfica Nativa de Alta Qualidade:** Aplicativo Homebrew (.NRO) moderno renderizado a 720p nativo @ 60 FPS, com visual escuro, destaques em Neon Cyan/Red (Joy-Con), modais de autorização e suporte ao teclado oficial do Switch.
+
+---
+
+## 🚀 Novidades da Versão 0.0.7
+
+Esta versão foca em **resiliência industrial de conectividade, eliminação de gargalos de rede e garantia total de sincronização**:
+
+1. **Renovação Antecipada de Tokens OAuth e Fim das Pastas Duplicadas:**
+   - Chamada mandatória de `refreshAccessToken()` antes de qualquer listagem, criação ou upload na Google Drive API v3.
+   - Ordenação estrita das buscas por data de criação (`&orderBy=createdTime`), eliminando a criação indevida de pastas duplicadas (`Switch Saves (1..9)`) e vinculando permanentemente à pasta mestre.
+2. **Expansão do Heap do Sysmodule para 3.5 MiB:**
+   - Aumento da memória estática `.bss` de 1.5 MiB para 3.5 MiB (`0x380000`), extinguindo falhas `CURLE_WRITE_ERROR` e out-of-memory durante handshakes TLS e uploads de arquivos grandes em background.
+3. **Purga Automática de Jobs Fantasmas (`stat()`):**
+   - Eliminação do loop infinito de `fopen zip failed` na fila persistente: jobs de arquivos que já foram transmitidos ou removidos são expurgados imediatamente.
+4. **Resolução de Concorrência de Arquivos Temporários:**
+   - Nomes de arquivos de streaming de payload tornados estritamente únicos por TitleID e timestamp (`up_stream_<TID>_<timestamp>.tmp`), evitando bloqueios mútuos entre GUI e daemon.
+5. **Atualização Dinâmica do Perfil Ativo:**
+   - Identificação do UID real de saves criados por perfis secundários durante o fechamento de processos via `FsSaveDataInfoReader`.
+6. **Sincronização em Lockstep (Versionamento + Raiz):**
+   - Todo upload atualiza paralelamente a pasta versionada append-only (`Switch Saves/<TitleID>/<AccountUid>/`) e o arquivo raiz (`Switch Saves/save_<TitleID>.zip`), assegurando sincronia em tempo real com o PC e o app GUI.
+7. **Suítes de Testes Automatizadas e Deploy via MTP:**
+   - Adicionadas 4 suítes de testes em PowerShell (`tests/`) cobrindo 100% dos fluxos de autenticação, integridade de arquivos .zip e integridade dos arquivos no Switch via MTP.
 
 ---
 
