@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <b>Backup automático, transparente e seguro dos seus saves de jogos do Nintendo Switch direto para o Google Drive.</b>
+  <b>Sincronização manual, sob demanda e segura dos seus saves de jogos do Nintendo Switch direto para o Google Drive. Zero consumo de RAM em segundo plano e compatibilidade total com Ultrahand.</b>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.7-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.7" />
+  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.0.8-34A853?style=for-the-badge&logo=github&logoColor=white" alt="Versão v0.0.8" />
   <img src="https://img.shields.io/badge/Plataforma-Nintendo%20Switch-E60012?style=for-the-badge&logo=nintendo-switch&logoColor=white" alt="Nintendo Switch" />
   <img src="https://img.shields.io/badge/CFW-Atmosph%C3%A8re%201.7%2B-00D2FF?style=for-the-badge" alt="Atmosphere" />
   <img src="https://img.shields.io/badge/Google-Drive%20API%20v3-4285F4?style=for-the-badge&logo=googledrive&logoColor=white" alt="Google Drive" />
@@ -24,33 +24,60 @@
 
 ## 📌 Sumário
 1. [Visão Geral](#-visão-geral)
-2. [Novidades da Versão 0.0.7](#-novidades-da-versão-007)
-3. [Novidades da Versão 0.0.6](#-novidades-da-versão-006)
-4. [Componentes da Suite](#-componentes-da-suite)
-5. [Como Funciona (Arquitetura)](#-como-funciona-arquitetura)
-6. [Instalação Rápida no Cartão SD](#-instalação-rápida-no-cartão-sd)
-7. [Configuração das Credenciais do Google Drive](#-configuração-das-credenciais-do-google-drive)
-8. [Vinculando sua Conta pelo Switch](#-vinculando-sua-conta-pelo-switch)
-9. [Controles e Navegação do Aplicativo](#-controles-e-navegação-do-aplicativo)
-10. [Certificados SSL e Criptografia](#-certificados-ssl-e-criptografia)
-11. [Perguntas Frequentes e Resolução de Problemas](#-perguntas-frequentes-e-resolução-de-problemas)
-12. [Como Compilar do Código-Fonte](#-como-compilar-do-código-fonte)
+2. [Novidades da Versão 0.0.8 (Modo 100% Sob Demanda)](#-novidades-da-versão-008)
+3. [Novidades da Versão 0.0.7](#-novidades-da-versão-007)
+4. [Novidades da Versão 0.0.6](#-novidades-da-versão-006)
+5. [Componentes da Suite](#-componentes-da-suite)
+6. [Como Funciona (Arquitetura)](#-como-funciona-arquitetura)
+7. [Instalação Rápida no Cartão SD](#-instalação-rápida-no-cartão-sd)
+8. [Configuração das Credenciais do Google Drive](#-configuração-das-credenciais-do-google-drive)
+9. [Vinculando sua Conta pelo Switch](#-vinculando-sua-conta-pelo-switch)
+10. [Controles e Navegação do Aplicativo](#-controles-e-navegação-do-aplicativo)
+11. [Certificados SSL e Criptografia](#-certificados-ssl-e-criptografia)
+12. [Perguntas Frequentes e Resolução de Problemas](#-perguntas-frequentes-e-resolução-de-problemas)
+13. [Como Compilar do Código-Fonte](#-como-compilar-do-código-fonte)
 
 ---
 
 ## 🌟 Visão Geral
 
-O **Google Drive Cloud Save Suite** transforma o seu Nintendo Switch desbloqueado em uma central moderna de backup em nuvem, similar aos serviços premium da Nintendo Switch Online, Steam Cloud ou Xbox Cloud, mas utilizando a **sua própria conta pessoal do Google Drive** com armazenamento gratuito ou pago.
+O **Google Drive Cloud Save Suite** transforma o seu Nintendo Switch desbloqueado em uma central moderna de backup e restauração em nuvem, similar aos serviços da Nintendo Switch Online, Steam Cloud ou Xbox Cloud, mas utilizando a **sua própria conta pessoal do Google Drive** com armazenamento gratuito ou pago.
+
+A partir da **versão 0.0.8**, a suite funciona de forma **100% sob demanda e manual**: você abre o aplicativo pelo Homebrew Menu quando desejar sincronizar, garantindo **zero consumo de memória RAM e zero impacto de CPU** durante os seus jogos, além de total compatibilidade com **Ultrahand** e outros overlays do Atmosphère.
 
 ### Principais Destaques:
-* 🔄 **Totalmente Invisível e Automático:** O daemon roda em segundo plano. Você joga normalmente; quando fecha o jogo pelo menu Home, o save é sincronizado sem que você precise abrir nenhum menu.
-* ⚡ **Zero Lag nos Jogos:** O sysmodule utiliza um pool fixo de apenas 2MB de memória RAM no `.bss` de sistema, garantindo **0% de impacto** no desempenho mesmo em jogos pesados como *Zelda: Tears of the Kingdom* ou *The Witcher 3*.
+* 🚀 **Zero RAM em Segundo Plano (100% Sob Demanda):** O daemon em segundo plano foi completamente eliminado. Seus jogos e overlays têm 100% dos recursos do console disponíveis o tempo todo.
+* 🕹️ **Compatibilidade Perfeita com Ultrahand:** O menu de overlays (Tesla / Ultrahand) abre imediatamente via `LS + RS` sem lentidões, disputas de System Pool ou falhas `Result 0x1159`.
 * 🗂️ **Zero Bagunça no Google Drive:** Cria automaticamente a pasta `Switch Saves` e gerencia atualizações inteligentes via requisições `PATCH` (sobrescrevendo o save anterior) e `POST` (criando novos saves), sem duplicar arquivos nem lotar sua lixeira.
-* 🔐 **Detecção por Hash CRC32:** O sistema lê os arquivos do save e só inicia o upload se você realmente avançou no jogo e alterou o progresso.
-* 📦 **Upload Manual em Lote ou Seletivo:** Além do backup automático, a interface gráfica permite enviar todos os saves de uma só vez ou selecionar individualmente quais jogos você deseja sincronizar, com os nomes reais dos jogos descobertos diretamente dos metadados oficiais do Switch.
-* 📶 **Resiliência a Comunicação Local (LDN / Y-Comm):** Suporte nativo e automático a jogos como *Pokémon Sword/Shield* e *Animal Crossing*, aguardando a reconexão com a rede Wi-Fi residencial antes do upload.
-* 💾 **Fila Offline com Auto-Recuperação:** Se o console estiver offline no momento do fechamento, o save é enfileirado no cartão SD e enviado em segundo plano assim que a conexão retornar, inclusive sobrevivendo a reinicializações.
-* 🎨 **Interface Gráfica Nativa de Alta Qualidade:** Aplicativo Homebrew (.NRO) moderno renderizado a 720p nativo @ 60 FPS, com visual escuro, destaques em Neon Cyan/Red (Joy-Con), modais de autorização e suporte ao teclado oficial do Switch.
+* 🔐 **Detecção por Hash CRC32 e Timestamps:** O sistema valida integridade via CRC32 e compara os carimbos de data/hora (Drive vs. Local) com proteção estrita de sanidade do relógio RTC do console.
+* 📦 **Upload Manual em Lote ou Seletivo:** Envie todos os seus saves de uma vez ou selecione individualmente quais jogos você deseja enviar para o Drive, salvando sua lista de favoritos diretamente na memória.
+* ⬇️ **Restauração Inteligente e Segura:** Baixa e atualiza saves da nuvem exclusivamente se a versão do Google Drive for mais recente que a local, com backup preventivo e commit atômico na memória flash (`fsdevCommitDevice`).
+* 🎨 **Interface Gráfica Nativa de Alta Qualidade:** Aplicativo Homebrew (.NRO) moderno renderizado a 720p nativo @ 60 FPS, com visual escuro, destaques Joy-Con Neon, modais interativas e suporte ao teclado oficial do Switch.
+
+---
+
+## 🚀 Novidades da Versão 0.0.8
+
+Esta versão traz uma reestruturação fundamental atendendo diretamente à estabilidade do console e desempenho nos jogos:
+
+1. **Eliminação do Daemon em Background (Zero RAM & CPU):**
+   - O sysmodule daemon (`atmosphere/contents/4200000000000010/`) foi completamente descomissionado.
+   - Todo o sincronismo agora é executado sob demanda diretamente pelo aplicativo gráfico Homebrew (`gdrive-sync.nro`).
+   - Zero concorrência de descritores de arquivo do Horizon OS durante o fechamento de jogos.
+2. **Correção e Estabilidade Total do Ultrahand / Tesla Overlays:**
+   - Restaurados 100% do System Memory Pool do Atmosphère (`pool_partition: 2`), eliminando panes de Out of Memory / Result `0x1159`.
+   - Limpeza de arquivos órfãos em `atmosphere/contents/4200000007e51a/` e ajuste de responsividade (`hold_duration=500` ms) no `config/ultrahand/config.ini`.
+3. **Novo Menu Principal Simplificado (8 Ações Diretas):**
+   - **[0] Subir Todos os Saves Agora (Upload em Lote):** Compacta e envia todos os saves do usuário ativo de uma só vez.
+   - **[1] Atualizar do Drive (Baixar se Nuvem for Mais Recente):** Restauração inteligente comparando carimbos UTC com trava protetiva de RTC < 2025.
+   - **[2] Selecionar Jogos para Sincronizar:** Gerenciador seletivo individual de jogos com atalho `[X]` para salvar favoritos.
+   - **[3] Vincular Conta Google:** Fluxo Device Flow OAuth 2.0 nativo na tela do console.
+   - **[4] Validar / Criar Pasta de Saves no Drive:** Garante a estrutura na nuvem.
+   - **[5] Configurar Google OAuth Client ID:** Edição via teclado virtual nativo.
+   - **[6] Configurar Google OAuth Client Secret:** Edição via teclado virtual nativo.
+   - **[7] Alterar Nome da Pasta de Destino no Drive:** Personalização do diretório de destino.
+4. **Remoção de Dependências Obsoletas:**
+   - Eliminadas as conexões aos serviços `pm:dmnt` e `pm:shell`, tornando a aplicação mais leve, segura e rápida para iniciar e fechar.
 
 ---
 
@@ -166,39 +193,37 @@ Esta versão consolida a maturidade do projeto com foco em resiliência contra c
 
 | Componente | Tipo | Caminho no SD | Descrição |
 | :--- | :--- | :--- | :--- |
-| **Daemon CloudSave** | Sysmodule (`exefs.nsp`) | `sdmc:/atmosphere/contents/4200000000000010/` | Fica ativo em segundo plano no Switch monitorando o encerramento dos jogos via serviços do sistema (`pm:dmnt` / `pm:info`). |
-| **Google Drive Sync** | Aplicativo (`.nro`) | `sdmc:/switch/gdrive-sync/gdrive-sync.nro` | Interface visual completa aberta pelo Homebrew Menu para configurar credenciais, parear conta, testar conexão, listar e subir saves manualmente. |
-| **Configurações** | Arquivo JSON | `sdmc:/config/gdrive-sync/config.json` | Armazena tokens OAuth 2.0 (access_token, refresh_token), client_id, client_secret, folder_id, modo de sincronização e títulos autorizados. |
-| **Logs de Diagnóstico** | Arquivo Texto | `sdmc:/config/gdrive-sync/sync.log` | Registra detalhes operacionais com timestamps, códigos de status HTTP, geração de ZIPs e eventos de rede. |
+| **Google Drive Sync** | Aplicativo (`.nro`) | `sdmc:/switch/gdrive-sync/gdrive-sync.nro` | Interface visual completa aberta pelo Homebrew Menu para configurar credenciais, parear conta, testar conexão, listar, subir e restaurar saves com segurança e **zero consumo de RAM em background**. |
+| **Configurações** | Arquivo JSON | `sdmc:/config/gdrive-sync/config.json` | Armazena tokens OAuth 2.0 (access_token, refresh_token), client_id, client_secret, folder_id, modo de sincronização e títulos favoritos. |
+| **Certificados SSL** | Arquivo PEM | `sdmc:/config/gdrive-sync/cacert.pem` | Certificados de autoridade de certificação (Mozilla CA) essenciais para conexão HTTPS/TLS segura com o Google Drive. |
+| **Logs de Diagnóstico** | Arquivo Texto | `sdmc:/config/gdrive-sync/sync.log` | Registra detalhes operacionais com timestamps UTC, hashes CRC32, códigos HTTP e auditoria de restaurações. |
+
+> [!NOTE]
+> **Aviso sobre o Daemon Antigo:** A partir da versão **v0.0.8**, o sysmodule em segundo plano (`sdmc:/atmosphere/contents/4200000000000010/`) foi descontinuado e deve ser removido do cartão SD para liberar a memória e prevenir conflitos com o Ultrahand.
 
 ---
 
-## ⚙️ Como Funciona (Arquitetura)
+## ⚙️ Como Funciona (Arquitetura Sob Demanda)
 
 ```text
-  [ JOGADOR ] ──> Joga normalmente (ex: Zelda BOTW, Pokémon Sword)
-       │
-       ▼ Pressiona HOME e fecha o jogo (X -> Fechar)
-  [ KERNEL HORIZON ] ──> Emite evento de término de processo (ExitProcess)
-       │
-       ▼
-  [ SYSMODULE EM BACKGROUND (0x4200000000000010) ]
-       │ 1. Intercepta o fechamento via 'pm:dmnt'
-       │ 2. Normaliza o Title ID (suporte a patches/updates) e usuário ativo ('acc:u0')
-       │ 3. Filtra pelo modo de sincronização (All vs Whitelist de jogos rastreados)
-       │ 4. Monta o save via 'fs-srv' e calcula hash CRC32 acumulado
-       │
-   [ Houve alteração no save? ]
-       ├── NÃO ──> Não faz nada e volta a dormir (economiza bateria e internet)
-       └── SIM ──> Inicia pipeline de upload:
-                     │ a. Compacta os dados em ZIP direto no SD
-                     │ b. Verifica conexão Wi-Fi ativa ('nifm:u'):
-                     │      ├── Se em LDN/ad-hoc (ex: Pokémon): aguarda reconexão do roteador (até 15s)
-                     │      └── Se offline: guarda em fila pendente em disco ('pending_*.zip')
-                     │ c. Renova token OAuth com a Google caso necessário
-                     │ d. Upload via streaming HTTP (PATCH para atualizar, POST para novo save)
-                     │ e. Limpa o arquivo temporário do SD
-                     └── Save seguro na nuvem! ☁️
+   [ JOGADOR ] ──> Joga normalmente com 100% de CPU/RAM livres e Ultrahand 100% fluido!
+        │
+        ▼ Quando desejar sincronizar os dados:
+   [ HOMEBREW MENU ] ──> Abre "Google Drive Sync" (gdrive-sync.nro)
+        │
+        ├── [Opção 1] SUBIR TODOS OS SAVES (Lote):
+        │     - Identifica o usuário ativo no Switch
+        │     - Compacta os saves de cada jogo instalado em .zip
+        │     - Envia para o Drive atualizando a pasta raiz e o snapshot versionado
+        │
+        ├── [Opção 2] ATUALIZAR DO DRIVE (Download Inteligente):
+        │     - Valida a sanidade do relógio RTC do console (trava anti-corrupção se < 2025)
+        │     - Compara Timestamp_Drive vs Timestamp_Local
+        │     - Se Drive > Local: faz backup preventivo, baixa o .zip, limpa partição e comita (fsdevCommitDevice)
+        │
+        └── [Opção 3] SELECIONAR JOGOS PARA SINCRONIZAR:
+              - Lista jogos com títulos reais
+              - Permite selecionar quais enviar e marcar favoritos com [X]
 ```
 
 ---
@@ -209,26 +234,20 @@ Se você está com o Nintendo Switch conectado ao computador (via DBI em modo MT
 
 ```text
 sdmc:/ (Raiz do Cartão SD)
- ├── atmosphere/
- │    └── contents/
- │         └── 4200000000000010/
- │              ├── exefs.nsp           <-- Executável do Daemon em segundo plano
- │              ├── toolbox.json        <-- Informações para Tesla Overlay / Am-Toolbox
- │              └── flags/
- │                   └── boot2.flag     <-- Garante que o Daemon ligue junto com o console
  ├── switch/
  │    └── gdrive-sync/
- │         └── gdrive-sync.nro          <-- Aplicativo gráfico com ícone na interface
+ │         └── gdrive-sync.nro          <-- Aplicativo gráfico com ícone na interface (v0.0.8)
  └── config/
       └── gdrive-sync/
            ├── config.json              <-- Suas chaves OAuth (client_id, secret, tokens)
            ├── cacert.pem               <-- Certificados SSL de validação HTTPS
-           ├── gdrive_sync.log          <-- Log de operações e diagnósticos
-           └── temp/                    <-- Diretório temporário para os arquivos ZIP e fila pendente
+           ├── sync.log                 <-- Log de operações e diagnósticos
+           └── temp/                    <-- Diretório temporário para processamento de arquivos ZIP
 ```
 
-> [!TIP]
-> **Inicialização Automática:** Com a presença do arquivo `boot2.flag`, o Atmosphère inicializa o serviço de backup automaticamente em todo reboot do Switch. Você não precisa fazer nada manualmente!
+> [!IMPORTANT]
+> **Upgrade da v0.0.7 para a v0.0.8:**
+> Se você utilizava uma versão anterior com o daemon em segundo plano, **delete a pasta** `sdmc:/atmosphere/contents/4200000000000010/` do seu cartão SD. Isso devolverá 100% da memória do sistema ao console e restaurará o funcionamento perfeito do **Ultrahand Overlay**!
 
 ---
 
@@ -296,7 +315,7 @@ Abra o arquivo `sdmc:/config/gdrive-sync/config.json` em qualquer editor de text
 3. Pressione a opção de editar `Client ID` ou `Client Secret`: o teclado oficial do Horizon OS surgirá na tela para você digitar diretamente.
 
 ### Finalizando o Pareamento:
-1. Dentro do aplicativo no Switch, selecione **`1. VINCULAR CONTA GOOGLE DRIVE`**.
+1. Dentro do aplicativo no Switch, selecione a opção **`VINCULAR CONTA GOOGLE (DEVICE FLOW NA TELA)`**.
 2. Uma janela elegante se abrirá mostrando:
    - O endereço de acesso: `https://www.google.com/device`
    - Um código de 8 dígitos (exemplo: `ABCD-EFGH`).
@@ -308,26 +327,30 @@ Abra o arquivo `sdmc:/config/gdrive-sync/config.json` em qualquer editor de text
 
 ## 🎮 Controles e Navegação do Aplicativo
 
-### Menu Principal
-| Botão | Ação |
-| :---: | :--- |
-| **D-Pad / Analógico Cima/Baixo** | Navega entre as opções e configurações. |
-| **Botão (A)** | Seleciona a opção destacada ou abre o teclado para editar campos. |
-| **Opção "Subir Todos os Saves Agora"** | Compacta e envia todos os saves do usuário ativo em lote com barra de progresso. |
-| **Opção "Atualizar do Drive (Baixar se Nuvem for Mais Recente)"** | Compara timestamps e baixa/restaura da nuvem saves mais recentes com backup de segurança e commit. |
-| **Opção "Selecionar Jogos para Sincronizar"** | Abre a lista interativa de jogos com nomes reais para marcar e sincronizar. |
-| **Botão (X)** | Inicia ou encerra o Daemon em segundo plano. |
-| **Botão (Y)** | Ativa ou desativa o **Auto-Boot** no início do console (`boot2.flag`). |
+### Menu Principal (8 Ações Diretas)
+| Opção / Botão | Ação |
+| :--- | :--- |
+| **[0] Subir Todos os Saves Agora** | Compacta e envia todos os saves do usuário ativo em lote para o Drive com barra de progresso. |
+| **[1] Atualizar do Drive** | Compara timestamps UTC e baixa/restaura da nuvem saves mais recentes com backup de segurança e commit. |
+| **[2] Selecionar Jogos para Sincronizar** | Abre a lista seletiva interativa de jogos com nomes reais e suporte a favoritos. |
+| **[3] Vincular Conta Google** | Inicia o pareamento OAuth 2.0 Device Flow diretamente na tela. |
+| **[4] Validar / Criar Pasta no Drive** | Testa a conectividade com a API e garante a pasta mestre no Google Drive. |
+| **[5] Configurar Client ID** | Abre o teclado virtual oficial do Switch para editar o Client ID. |
+| **[6] Configurar Client Secret** | Abre o teclado virtual oficial do Switch para editar o Client Secret. |
+| **[7] Alterar Nome da Pasta de Destino** | Altera o nome da pasta de backup principal no Drive (padrão: `Switch Saves`). |
+| **D-Pad / Analógico** | Navega verticalmente com rolagem suave entre os cards. |
+| **Botão (A)** | Executa a ação selecionada ou abre o teclado virtual. |
+| **Botão (B)** | Fecha o aplicativo e retorna ao menu anterior. |
 | **Botão (-)** | Abre a tela de Guia Rápido e Ajuda. |
-| **Botão (+)** | Fecha o aplicativo com segurança. |
+| **Botão (+)** | Encerra o aplicativo com segurança. |
 
 ### Tela de Seleção de Jogos ("Selecionar Jogos para Sincronizar")
 | Botão | Ação |
 | :---: | :--- |
-| **D-Pad / Analógico Cima/Baixo** | Navega pela lista de jogos (com rolagem/scroll suave). |
+| **D-Pad / Analógico Cima/Baixo** | Navega pela lista de jogos instalados (com rolagem suave). |
 | **Botão (A)** | Marca ou desmarca o jogo (`[X]` / `[ ]`). |
 | **Botão (Y)** | Marca todos ou desmarca todos os jogos de uma vez. |
-| **Botão (X)** | Salva a seleção atual como padrão (`whitelist`) para o Sysmodule automático. |
+| **Botão (X)** | Salva os jogos marcados como **Favoritos** persistentes. |
 | **Botão (+)** | Inicia imediatamente o upload apenas dos jogos selecionados. |
 | **Botão (B)** | Cancela e volta para o menu principal. |
 
@@ -344,28 +367,21 @@ Para validação das Autoridades Certificadoras (CA) da Google, a suite utiliza 
 
 ## ❓ Perguntas Frequentes e Resolução de Problemas
 
-### 1. Ao apertar [X] recebi o erro `0x809` ou `0xE801`. O que significa?
-* **Causa:** O Homebrew Menu foi aberto em **Applet Mode** (abrindo o Álbum sem segurar R). Em modo applet, a memória RAM é estritamente limitada a 32MB e o Horizon OS bloqueia o serviço de controle de processos `pm:shell`.
-* **Solução:** 
-  1. Feche o Homebrew Menu.
-  2. Mantenha o botão **[R]** pressionado no controle e clique para iniciar qualquer jogo instalado no seu menu principal (ex: Zelda BOTW, Mario Kart, etc.).
-  3. Mantenha o botão **[R]** pressionado até o Homebrew Menu abrir com acesso total à memória (Title Override).
-  4. Além disso, com a flag `boot2.flag` ativada, basta **reiniciar o console** uma vez para que o daemon carregue automaticamente no boot como serviço do sistema.
+### 1. Por que a suite agora é 100% manual sob demanda e não tem mais daemon em segundo plano?
+Na versão v0.0.8, o daemon em segundo plano foi eliminado para garantir **zero consumo de RAM e zero impacto de CPU** enquanto você joga. Em consoles desbloqueados, sysmodules em background disputam o pool limitado de memória de sistema do Atmosphère (`pool_partition: 2`) com módulos essenciais (como *sys-clk*, *emuiibo*, *missioncontrol* e o *Ultrahand/Tesla Overlay*). Ao tornar a sincronização sob demanda no app Homebrew, o Switch ganha estabilidade absoluta e desempenho máximo.
 
-### 2. O backup funciona se o console estiver offline ou após jogos com comunicação local (como Pokémon)?
-Sim! O sistema possui três camadas de tolerância:
-1. **Reconexão LDN Automática:** Jogos que usam comunicação sem fio local (como *Pokémon Sword/Shield*, *Pokémon Scarlet/Violet*, *Animal Crossing*) colocam o chip Wi-Fi em modo ad-hoc e desconectam da rede de casa. Ao fechar esses jogos, o daemon aguarda ativamente até 15 segundos pela re-associação com o roteador.
-2. **Fila Offline em Segundo Plano (`s_pendingSaves`):** Se a internet não estiver disponível no momento do fechamento, o arquivo `.zip` é enfileirado na pasta temporária (`sdmc:/config/gdrive-sync/temp/pending_*.zip`). Uma thread em segundo plano tenta enviá-lo assim que a conexão for reestabelecida.
-3. **Auto-Recuperação no Boot:** Se o console for desligado antes do upload, no próximo arranque o daemon detecta e envia os saves pendentes automaticamente.
+### 2. O que foi feito para consertar o Ultrahand Overlay?
+O Ultrahand / `nx-ovlloader` (`420000000007E51A`) estava falhando por concorrência de heap no Atmosphere. Com a remoção do daemon antigo, 100% do System Memory Pool foi devolvido ao sistema. Além disso, foram purgados arquivos órfãos em `contents/420000000007E51A/` e o tempo de acionamento em `sdmc:/config/ultrahand/config.ini` foi ajustado de 3000ms para 500ms (`hold_duration=500`), permitindo abrir o menu de overlays imediatamente ao pressionar `LS + RS` ou `ZL + ZR + D-Pad Baixo`.
 
-### 3. Por que um jogo não subiu logo após salvar e fechar?
-O daemon calcula um hash CRC32 de todo o diretório do save e compara com o valor registrado em `sdmc:/config/gdrive-sync/state.json`. Se o save não sofreu modificações reais desde o último backup, o sistema pula o envio para poupar internet e bateria. Caso queira forçar o envio imediato, use a opção **"Subir Todos os Saves Agora"** ou **"Selecionar Jogos para Sincronizar"** na interface gráfica.
+### 3. Como funciona a proteção contra perda de saves no download?
+Antes de restaurar qualquer save vindo da nuvem:
+1. **Validação do Relógio RTC:** O app checa se a data do Switch é posterior a 2025. Se o console esteve sem bateria e resetou o ano para 1970 ou 2000, o download automático é bloqueado para não sobrescrever saves válidos com datas antigas.
+2. **Comparação Estrita de Timestamps:** O save só é baixado se a versão da nuvem for estritamente mais recente que a do console (`Drive_Timestamp > Local_Timestamp`).
+3. **Backup Preventivo:** Um backup de segurança do save local é gerado no SD antes de qualquer alteração.
+4. **Commit Atômico:** Após a extração dos arquivos em `save:/`, é chamada a função `fsdevCommitDevice("save")` para gravação definitiva na memória NAND/SD.
 
-### 4. Posso restaurar meus saves do Google Drive de volta para o console?
-Sim! Como todos os saves são armazenados no formato padrão `.zip` contendo os arquivos internos brutos, você pode baixar o ZIP diretamente do Google Drive no celular ou PC e restaurá-los usando ferramentas consagradas como o **JKSV** ou **Checkpoint**.
-
-### 5. Como desativar temporariamente o backup automático?
-Basta abrir o aplicativo gráfico no Switch e pressionar **[Y]** para desmarcar o Auto-Boot, ou apagar o arquivo `sdmc:/atmosphere/contents/4200000000000010/flags/boot2.flag`.
+### 4. Posso acessar os saves pelo computador ou celular?
+Sim! O aplicativo sincroniza os arquivos diretamente na sua pasta do Google Drive (`Switch Saves/`). Você pode baixar os arquivos `.zip` tanto da pasta raiz quanto do histórico versionado (`Switch Saves/<TitleID>/<AccountUid>/`) e restaurá-los em emuladores (Ryujinx/Yuzu) ou em outro console usando ferramentas como **JKSV** ou **Checkpoint**.
 
 ---
 
