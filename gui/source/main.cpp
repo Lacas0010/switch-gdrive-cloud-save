@@ -42,48 +42,8 @@ std::string showKeyboard(const char* guideText, const std::string& initialText) 
 }
 
 // ==============================================================================
-// CONTROLE DO PROCESSO DO SYSMODULE (pmdmnt / pmshell)
+// CHECAGEM DE CONEXAO DE REDE
 // ==============================================================================
-bool isSysmoduleRunning(u64& outPid) {
-    outPid = 0;
-    Result rc = pmdmntGetProcessId(&outPid, Config::SYSMODULE_TITLE_ID);
-    return (R_SUCCEEDED(rc) && outPid != 0);
-}
-
-bool startSysmodule(std::string& outMsg) {
-    NcmProgramLocation loc = {};
-    loc.program_id = Config::SYSMODULE_TITLE_ID;
-    loc.storageID  = NcmStorageId_None;
-
-    u64 pid = 0;
-    Result rc = pmshellLaunchProgram(0, &loc, &pid);
-    if (rc == 0xE801) {
-        outMsg = "Sysmodule ja esta ativo em segundo plano!";
-        return true;
-    }
-    if (R_FAILED(rc)) {
-        char errBuf[128];
-        snprintf(errBuf, sizeof(errBuf), "Erro 0x%X (Abra via [R] no jogo ou reinicie)", rc);
-        outMsg = errBuf;
-        return false;
-    }
-
-    outMsg = "Sysmodule disparado com sucesso! PID: " + std::to_string(pid);
-    return true;
-}
-
-bool stopSysmodule(std::string& outMsg) {
-    Result rc = pmshellTerminateProgram(Config::SYSMODULE_TITLE_ID);
-    if (R_FAILED(rc)) {
-        char errBuf[128];
-        snprintf(errBuf, sizeof(errBuf), "Erro 0x%X ao encerrar sysmodule", rc);
-        outMsg = errBuf;
-        return false;
-    }
-
-    outMsg = "Sysmodule encerrado com sucesso!";
-    return true;
-}
 
 bool isInternetConnected() {
     NifmInternetConnectionType connType;
@@ -217,28 +177,26 @@ void runHelpModal(Gfx::Display& display, PadState& pad) {
             display.fillRect(mx + 30, my + 95, mw - 60, 2, Gfx::Colors::CARD_OUTLINE);
 
             int ty = my + 115;
-            display.drawText(mx + 40, ty, "COMO FUNCIONA O BACKUP AUTOMATICO:", Gfx::Colors::JOYCON_YELLOW, 1, true);
+            display.drawText(mx + 40, ty, "COMO FUNCIONA A SINCRONIZACAO SOB DEMANDA:", Gfx::Colors::JOYCON_YELLOW, 1, true);
             ty += 24;
-            display.drawText(mx + 50, ty, "- O Sysmodule roda em background consumindo menos de 3MB de RAM.", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(mx + 50, ty, "- 100% Manual & Sob Demanda: Nenhum daemon roda em segundo plano.", Gfx::Colors::TEXT_WHITE, 1);
             ty += 20;
-            display.drawText(mx + 50, ty, "- Ao encerrar qualquer jogo, o processo e detectado automaticamente.", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(mx + 50, ty, "- Zero consumo de RAM durante seus jogos: Desempenho e estabilidade totais.", Gfx::Colors::TEXT_WHITE, 1);
             ty += 20;
-            display.drawText(mx + 50, ty, "- Os dados do save sao compactados em .zip e enviados ao Google Drive.", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(mx + 50, ty, "- Compatibilidade Total: Ultrahand e Overlays de Tesla funcionam sem travar.", Gfx::Colors::TEXT_WHITE, 1);
             ty += 20;
-            display.drawText(mx + 50, ty, "- Saves antigos sao atualizados (PATCH), sem arquivos duplicados.", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(mx + 50, ty, "- Saves compactados em .zip e enviados com seguranca para o Google Drive.", Gfx::Colors::TEXT_WHITE, 1);
 
             ty += 34;
             display.drawText(mx + 40, ty, "REQUISITOS E DICAS IMPORTANTES:", Gfx::Colors::JOYCON_YELLOW, 1, true);
             ty += 24;
-            display.drawText(mx + 50, ty, "1. Configure seu Client ID e Secret nas opcoes [5] e [6].", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(mx + 50, ty, "1. Configure seu Client ID e Secret nas opcoes [5] e [6] e vincule na [3].", Gfx::Colors::TEXT_WHITE, 1);
             ty += 20;
             display.drawText(mx + 50, ty, "2. Certificados SSL (cacert.pem) ficam em: sdmc:/config/gdrive-sync/cacert.pem", Gfx::Colors::TEXT_WHITE, 1);
             ty += 20;
-            display.drawText(mx + 50, ty, "3. Para iniciar o Sysmodule via interface sem erros, abra o Homebrew Menu", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(mx + 50, ty, "3. Opcao [0]: Sobe todos os saves locais de uma vez para o Drive.", Gfx::Colors::TEXT_WHITE, 1);
             ty += 20;
-            display.drawText(mx + 65, ty, "segurando [R] sobre qualquer jogo (modo Title Override / sem limitacao).", Gfx::Colors::JOYCON_CYAN, 1);
-            ty += 20;
-            display.drawText(mx + 50, ty, "4. Ative o Auto-Boot [Y] para o daemon iniciar sempre com o console.", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(mx + 50, ty, "4. Opcao [1]: Baixa saves da nuvem apenas se forem mais recentes que os locais.", Gfx::Colors::TEXT_WHITE, 1);
 
             display.drawControllerButtonBadge(mx + mw - 160, my + mh - 45, "B", Gfx::Colors::JOYCON_GRAY);
             display.drawText(mx + mw - 130, my + mh - 42, "Fechar", Gfx::Colors::TEXT_WHITE, 1);
@@ -921,7 +879,7 @@ void runSelectGamesModal(Gfx::Display& display,
 
             btnX += 160;
             display.drawControllerButtonBadge(btnX, footerY, "X", Gfx::Colors::JOYCON_BLUE);
-            display.drawText(btnX + 30, footerY + 4, "Salvar como Padrao", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(btnX + 30, footerY + 4, "Salvar Favoritos", Gfx::Colors::TEXT_WHITE, 1);
 
             btnX += 210;
             display.drawPillButtonBadge(btnX, footerY + 2, "+");
@@ -951,8 +909,6 @@ int main(int argc, char* argv[]) {
     fsdevMountSdmc();
     socketInitializeDefault();
     nifmInitialize(NifmServiceType_User);
-    pmdmntInitialize();
-    pmshellInitialize();
 
     Config::ensureDirectories();
 
@@ -970,17 +926,14 @@ int main(int argc, char* argv[]) {
 
     int selectedItem = 0;
     int menuScrollOffset = 0;
-    constexpr int TOTAL_MENU_ITEMS = 10;
+    constexpr int TOTAL_MENU_ITEMS = 8;
     constexpr int MENU_ITEMS_PER_VIEW = 6;
     std::string toastMessage = "Pronto! Selecione uma opcao para iniciar.";
     u32 toastColor = Gfx::Colors::STATUS_GREEN;
 
     // Cache de status para renderização 60 FPS
     u64 lastStatusCheck = 0;
-    u64 currentPid = 0;
-    bool sysmoduleActive = false;
-    bool bootFlagActive  = false;
-    bool wifiActive      = false;
+    bool wifiActive     = false;
 
     // Loop gráfico principal
     while (appletMainLoop()) {
@@ -1016,44 +969,11 @@ int main(int argc, char* argv[]) {
         }
         menuScrollOffset = std::clamp(menuScrollOffset, 0, TOTAL_MENU_ITEMS - MENU_ITEMS_PER_VIEW);
 
-        // Atualização periódica de status (a cada 1 segundo)
+        // Atualização periódica de status Wi-Fi (a cada 1 segundo)
         u64 now = armTicksToNs(armGetSystemTick());
         if (now - lastStatusCheck >= 1'000'000'000ULL) {
             lastStatusCheck = now;
-            sysmoduleActive = isSysmoduleRunning(currentPid);
-            bootFlagActive  = Config::isBootFlagPresent();
             wifiActive      = isInternetConnected();
-        }
-
-        // Atalho rápido [X]: Alternar Sysmodule
-        if (kDown & HidNpadButton_X) {
-            if (sysmoduleActive) {
-                if (stopSysmodule(toastMessage)) {
-                    toastColor = Gfx::Colors::STATUS_GREEN;
-                } else {
-                    toastColor = Gfx::Colors::STATUS_RED;
-                }
-            } else {
-                if (startSysmodule(toastMessage)) {
-                    toastColor = Gfx::Colors::STATUS_GREEN;
-                } else {
-                    toastColor = Gfx::Colors::STATUS_RED;
-                }
-            }
-            sysmoduleActive = isSysmoduleRunning(currentPid);
-        }
-
-        // Atalho rápido [Y]: Alternar Boot Flag
-        if (kDown & HidNpadButton_Y) {
-            Config::setBootFlag(!bootFlagActive);
-            bootFlagActive = Config::isBootFlagPresent();
-            if (bootFlagActive) {
-                toastMessage = "Auto-Boot no ligar do Switch ATIVADO (boot2.flag criada).";
-                toastColor   = Gfx::Colors::STATUS_GREEN;
-            } else {
-                toastMessage = "Auto-Boot DESATIVADO (boot2.flag removida).";
-                toastColor   = Gfx::Colors::STATUS_YELLOW;
-            }
         }
 
         // Atalho rápido [-]: Ajuda
@@ -1064,50 +984,9 @@ int main(int argc, char* argv[]) {
         // Confirmação com [A]
         if (kDown & HidNpadButton_A) {
             switch (selectedItem) {
-                case 0: // Vincular Conta Google
-                    if (!wifiActive) {
-                        toastMessage = "Erro: Conecte o Switch a rede Wi-Fi antes de vincular!";
-                        toastColor   = Gfx::Colors::STATUS_RED;
-                    } else if (!client.isConfigured()) {
-                        toastMessage = "Atencao: Preencha o Client ID e Secret primeiro (opcoes 4 e 5)!";
-                        toastColor   = Gfx::Colors::STATUS_YELLOW;
-                    } else {
-                        runDeviceAuthModal(display, client, pad);
-                        client.loadConfig();
-                        if (client.isAuthorized()) {
-                            toastMessage = "Sucesso! Conta Google vinculada com exito!";
-                            toastColor   = Gfx::Colors::STATUS_GREEN;
-                        }
-                    }
-                    break;
-
-                case 1: // Iniciar/Parar Sysmodule
-                    if (sysmoduleActive) {
-                        if (stopSysmodule(toastMessage)) {
-                            toastColor = Gfx::Colors::STATUS_GREEN;
-                        } else {
-                            toastColor = Gfx::Colors::STATUS_RED;
-                        }
-                    } else {
-                        if (startSysmodule(toastMessage)) {
-                            toastColor = Gfx::Colors::STATUS_GREEN;
-                        } else {
-                            toastColor = Gfx::Colors::STATUS_RED;
-                        }
-                    }
-                    sysmoduleActive = isSysmoduleRunning(currentPid);
-                    break;
-
-                case 2: // Toggle Boot
-                    Config::setBootFlag(!bootFlagActive);
-                    bootFlagActive = Config::isBootFlagPresent();
-                    toastMessage = bootFlagActive ? "Auto-boot ATIVADO!" : "Auto-boot DESATIVADO!";
-                    toastColor   = bootFlagActive ? Gfx::Colors::STATUS_GREEN : Gfx::Colors::STATUS_YELLOW;
-                    break;
-
-                case 3: { // Subir Todos os Saves Agora
+                case 0: { // Subir Todos os Saves Agora (Upload em Lote Manual)
                     if (!client.isAuthorized()) {
-                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
+                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 3)!";
                         toastColor   = Gfx::Colors::STATUS_YELLOW;
                     } else if (!wifiActive) {
                         toastMessage = "Erro: Sem conexao com a internet!";
@@ -1132,9 +1011,9 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 4: { // Atualizar do Drive (Baixar se Nuvem for Mais Recente)
+                case 1: { // Atualizar do Drive (Baixar se Nuvem for Mais Recente)
                     if (!client.isAuthorized()) {
-                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
+                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 3)!";
                         toastColor   = Gfx::Colors::STATUS_YELLOW;
                     } else if (!wifiActive) {
                         toastMessage = "Erro: Sem conexao com a internet!";
@@ -1153,9 +1032,9 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 5: { // Selecionar Jogos para Sincronizar
+                case 2: { // Selecionar Jogos para Sincronizar (Gerenciador Seletivo)
                     if (!client.isAuthorized()) {
-                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
+                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 3)!";
                         toastColor   = Gfx::Colors::STATUS_YELLOW;
                     } else {
                         AccountUid uid{};
@@ -1171,9 +1050,26 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 6: { // Validar/Criar Pasta
+                case 3: // Vincular Conta Google (Device Flow na Tela)
+                    if (!wifiActive) {
+                        toastMessage = "Erro: Conecte o Switch a rede Wi-Fi antes de vincular!";
+                        toastColor   = Gfx::Colors::STATUS_RED;
+                    } else if (!client.isConfigured()) {
+                        toastMessage = "Atencao: Preencha o Client ID e Secret primeiro (opcoes 5 e 6)!";
+                        toastColor   = Gfx::Colors::STATUS_YELLOW;
+                    } else {
+                        runDeviceAuthModal(display, client, pad);
+                        client.loadConfig();
+                        if (client.isAuthorized()) {
+                            toastMessage = "Sucesso! Conta Google vinculada com exito!";
+                            toastColor   = Gfx::Colors::STATUS_GREEN;
+                        }
+                    }
+                    break;
+
+                case 4: { // Validar / Criar Pasta de Saves no Drive
                     if (!client.isAuthorized()) {
-                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 1)!";
+                        toastMessage = "Erro: Vincule sua conta Google primeiro (opcao 3)!";
                         toastColor   = Gfx::Colors::STATUS_YELLOW;
                     } else if (!wifiActive) {
                         toastMessage = "Erro: Sem conexao com a internet!";
@@ -1192,7 +1088,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 7: { // Editar Client ID
+                case 5: { // Configurar Google OAuth Client ID
                     std::string newId = showKeyboard("Digite o Google OAuth Client ID", client.getClientId());
                     client.setClientId(newId);
                     client.saveConfig();
@@ -1201,7 +1097,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 8: { // Editar Client Secret
+                case 6: { // Configurar Google OAuth Client Secret
                     std::string newSec = showKeyboard("Digite o Google OAuth Client Secret", client.getClientSecret());
                     client.setClientSecret(newSec);
                     client.saveConfig();
@@ -1210,7 +1106,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
 
-                case 9: { // Editar Nome da Pasta
+                case 7: { // Alterar Nome da Pasta de Destino no Drive
                     std::string newFolder = showKeyboard("Nome da pasta de saves no Google Drive", client.getFolderName());
                     client.setFolderName(newFolder);
                     client.saveConfig();
@@ -1238,7 +1134,7 @@ int main(int argc, char* argv[]) {
 
             // Título e Versão
             display.drawText(42, 16, "GOOGLE DRIVE CLOUD SAVE", Gfx::Colors::TEXT_WHITE, 2, true);
-            display.drawText(44, 46, "Atmosphere CFW  •  Suite de Sincronizacao v0.0.7", Gfx::Colors::TEXT_MUTED, 1);
+            display.drawText(44, 46, "Atmosphere CFW  •  Suite Manual v0.0.8", Gfx::Colors::TEXT_MUTED, 1);
 
             // Badges de Status no Header (Direita)
             // Wi-Fi
@@ -1289,39 +1185,30 @@ int main(int argc, char* argv[]) {
             display.drawText(leftColX + 24, rY, "Metodo de Upload:", Gfx::Colors::TEXT_MUTED, 1);
             display.drawText(leftColX + 180, rY, "PATCH (Sem duplicatas)", Gfx::Colors::TEXT_WHITE, 1);
 
-            // Card 2: Background Daemon Status
+            // Card 2: Modo de Operacao & Recursos
             int card2Y = 370, card2H = 260;
             display.fillRoundedRect(leftColX, card2Y, leftColW, card2H, 14, Gfx::Colors::CARD_BG);
             display.drawRoundedRectOutline(leftColX, card2Y, leftColW, card2H, 14, Gfx::Colors::CARD_OUTLINE, 1);
 
-            display.drawCloudSaveIcon(leftColX + 32, card2Y + 28, 22, Gfx::Colors::JOYCON_CYAN);
-            display.drawText(leftColX + 56, card2Y + 22, "SYSMODULE DAEMON", Gfx::Colors::TEXT_WHITE, 1, true);
+            display.drawGamepadIcon(leftColX + 32, card2Y + 28, 22, Gfx::Colors::JOYCON_CYAN);
+            display.drawText(leftColX + 56, card2Y + 22, "MODO DE OPERACAO", Gfx::Colors::TEXT_WHITE, 1, true);
             display.fillRect(leftColX + 20, card2Y + 52, leftColW - 40, 1, Gfx::Colors::CARD_OUTLINE);
 
             rY = card2Y + 68;
             display.drawText(leftColX + 24, rY, "Execucao:", Gfx::Colors::TEXT_MUTED, 1);
-            if (sysmoduleActive) {
-                std::string pidStr = "ATIVO (PID " + std::to_string(currentPid) + ")";
-                display.drawText(leftColX + 180, rY, pidStr, Gfx::Colors::STATUS_GREEN, 1, true);
-            } else {
-                display.drawText(leftColX + 180, rY, "PARADO", Gfx::Colors::STATUS_RED, 1, true);
-            }
+            display.drawText(leftColX + 180, rY, "100% SOB DEMANDA", Gfx::Colors::STATUS_GREEN, 1, true);
 
             rY += 32;
-            display.drawText(leftColX + 24, rY, "Inicio no Boot:", Gfx::Colors::TEXT_MUTED, 1);
-            if (bootFlagActive) {
-                display.drawText(leftColX + 180, rY, "ATIVADO (boot2.flag)", Gfx::Colors::STATUS_GREEN, 1, true);
-            } else {
-                display.drawText(leftColX + 180, rY, "DESATIVADO", Gfx::Colors::TEXT_MUTED, 1);
-            }
+            display.drawText(leftColX + 24, rY, "Segundo Plano:", Gfx::Colors::TEXT_MUTED, 1);
+            display.drawText(leftColX + 180, rY, "0 MB RAM (Desligado)", Gfx::Colors::STATUS_GREEN, 1, true);
 
             rY += 32;
-            display.drawText(leftColX + 24, rY, "Consumo de RAM:", Gfx::Colors::TEXT_MUTED, 1);
-            display.drawText(leftColX + 180, rY, "< 3 MiB (Ultra leve)", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(leftColX + 24, rY, "Compatibilidade:", Gfx::Colors::TEXT_MUTED, 1);
+            display.drawText(leftColX + 180, rY, "Ultrahand & Overlays OK", Gfx::Colors::TEXT_WHITE, 1);
 
             rY += 32;
-            display.drawText(leftColX + 24, rY, "Monitoramento:", Gfx::Colors::TEXT_MUTED, 1);
-            display.drawText(leftColX + 24, rY + 20, "Detecta saves automaticamente ao fechar jogos", Gfx::Colors::JOYCON_CYAN, 1);
+            display.drawText(leftColX + 24, rY, "Sincronizacao:", Gfx::Colors::TEXT_MUTED, 1);
+            display.drawText(leftColX + 24, rY + 20, "Upload e download manuais diretamente neste App", Gfx::Colors::JOYCON_CYAN, 1);
 
             // 4. Coluna Direita: Menu de Ações Interativo
             int rightColX = 495, rightColW = 755;
@@ -1338,8 +1225,6 @@ int main(int argc, char* argv[]) {
 
             enum IconKind {
                 ICON_GOOGLE,
-                ICON_POWER,
-                ICON_FLAG,
                 ICON_UPLOAD,
                 ICON_DOWNLOAD,
                 ICON_GAMEPAD,
@@ -1357,12 +1242,10 @@ int main(int argc, char* argv[]) {
             };
 
             const MenuItem menuItems[TOTAL_MENU_ITEMS] = {
-                {ICON_GOOGLE,   "Vincular Conta Google (Device Flow na Tela)", "Exibe o codigo de confirmacao para ativar no celular ou PC", Gfx::Colors::DRIVE_YELLOW},
-                {ICON_POWER,    "Iniciar / Parar Sysmodule em Segundo Plano", "Alterna o processo daemon de monitoramento de saves",          sysmoduleActive ? Gfx::Colors::STATUS_GREEN : Gfx::Colors::STATUS_RED},
-                {ICON_FLAG,     "Alternar Inicializacao no Boot (boot2.flag)",  "Inicia automaticamente o daemon toda vez que ligar o Switch", bootFlagActive ? Gfx::Colors::STATUS_GREEN : Gfx::Colors::TEXT_MUTED},
                 {ICON_UPLOAD,   "Subir Todos os Saves Agora (Upload em Lote)",  "Compacta e envia todos os saves do usuario ativo para o Drive", Gfx::Colors::JOYCON_CYAN},
                 {ICON_DOWNLOAD, "Atualizar do Drive (Baixar se Mais Recente)", "Verifica e restaura saves da nuvem estritamente mais recentes", Gfx::Colors::STATUS_GREEN},
-                {ICON_GAMEPAD,  "Selecionar Jogos para Sincronizar",          "Lista os jogos para marcar quais enviar ou salvar como padrao", Gfx::Colors::JOYCON_BLUE},
+                {ICON_GAMEPAD,  "Selecionar Jogos para Sincronizar",          "Lista os jogos para marcar e enviar saves individualmente",     Gfx::Colors::JOYCON_BLUE},
+                {ICON_GOOGLE,   "Vincular Conta Google (Device Flow na Tela)", "Exibe o codigo de confirmacao para ativar no celular ou PC",     Gfx::Colors::DRIVE_YELLOW},
                 {ICON_FOLDER,   "Validar / Criar Pasta de Saves no Drive",     "Testa a conexao com a API e assegura a pasta destino",          Gfx::Colors::DRIVE_GREEN},
                 {ICON_KEY,      "Configurar Google OAuth Client ID",           "Insira a chave Client ID usando o teclado virtual Horizon",     Gfx::Colors::JOYCON_YELLOW},
                 {ICON_LOCK,     "Configurar Google OAuth Client Secret",       "Insira o Client Secret usando o teclado virtual Horizon",       Gfx::Colors::JOYCON_RED},
@@ -1408,12 +1291,6 @@ int main(int argc, char* argv[]) {
                 switch (item.icon) {
                     case ICON_GOOGLE:
                         display.drawGoogleDriveIcon(iconCircleX, iconCircleY, 20);
-                        break;
-                    case ICON_POWER:
-                        display.drawPowerIcon(iconCircleX, iconCircleY, 18, item.accentColor);
-                        break;
-                    case ICON_FLAG:
-                        display.drawFlagIcon(iconCircleX, iconCircleY, 18, item.accentColor);
                         break;
                     case ICON_UPLOAD:
                         display.drawCloudSaveIcon(iconCircleX, iconCircleY, 20, item.accentColor);
@@ -1480,27 +1357,19 @@ int main(int argc, char* argv[]) {
 
             int btnX = 30;
             display.drawControllerButtonBadge(btnX, footerY, "A", Gfx::Colors::JOYCON_RED);
-            display.drawText(btnX + 30, footerY + 4, "Selecionar", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(btnX + 30, footerY + 4, "Executar", Gfx::Colors::TEXT_WHITE, 1);
 
-            btnX += 150;
+            btnX += 160;
             display.drawControllerButtonBadge(btnX, footerY, "B", Gfx::Colors::JOYCON_GRAY);
-            display.drawText(btnX + 30, footerY + 4, "Voltar", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(btnX + 30, footerY + 4, "Fechar", Gfx::Colors::TEXT_WHITE, 1);
 
-            btnX += 130;
-            display.drawControllerButtonBadge(btnX, footerY, "X", Gfx::Colors::JOYCON_BLUE);
-            display.drawText(btnX + 30, footerY + 4, "Ligar/Parar Daemon", Gfx::Colors::TEXT_WHITE, 1);
-
-            btnX += 210;
-            display.drawControllerButtonBadge(btnX, footerY, "Y", Gfx::Colors::JOYCON_YELLOW);
-            display.drawText(btnX + 30, footerY + 4, "Auto-Boot", Gfx::Colors::TEXT_WHITE, 1);
-
-            btnX += 150;
+            btnX += 140;
             display.drawPillButtonBadge(btnX, footerY + 2, "-");
-            display.drawText(btnX + 30, footerY + 4, "Ajuda", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(btnX + 30, footerY + 4, "Ajuda & Info", Gfx::Colors::TEXT_WHITE, 1);
 
-            btnX += 120;
+            btnX += 170;
             display.drawPillButtonBadge(btnX, footerY + 2, "+");
-            display.drawText(btnX + 30, footerY + 4, "Sair", Gfx::Colors::TEXT_WHITE, 1);
+            display.drawText(btnX + 30, footerY + 4, "Sair para o Menu", Gfx::Colors::TEXT_WHITE, 1);
 
             display.endFrame();
         }
@@ -1510,8 +1379,6 @@ int main(int argc, char* argv[]) {
 
     // Finalização e limpeza dos serviços
     display.close();
-    pmshellExit();
-    pmdmntExit();
     nifmExit();
     setsysExit();
     setExit();

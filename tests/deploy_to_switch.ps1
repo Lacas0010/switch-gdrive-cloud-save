@@ -9,13 +9,8 @@ Write-Host "==================================================" -ForegroundColor
 Write-Host "DEPLOYMENT: Pushing Binaries to Nintendo Switch via MTP" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
-$exefsLocal = Join-Path $DistPath "atmosphere\contents\4200000000000010\exefs.nsp"
-$nroLocal   = Join-Path $DistPath "switch\gdrive-sync\gdrive-sync.nro"
+$nroLocal = Join-Path $DistPath "switch\gdrive-sync\gdrive-sync.nro"
 
-if (-not (Test-Path $exefsLocal)) {
-    Write-Error "Local artifact missing: $exefsLocal"
-    exit 1
-}
 if (-not (Test-Path $nroLocal)) {
     Write-Error "Local artifact missing: $nroLocal"
     exit 1
@@ -41,30 +36,30 @@ function Get-SubItem($folder, $name) {
 
 # 1. Target Directories
 $atmos = Get-SubItem $sd "atmosphere"
-$contents = Get-SubItem $atmos "contents"
-$sysDir = Get-SubItem $contents "4200000000000010"
+$contents = if ($atmos) { Get-SubItem $atmos "contents" } else { $null }
+$sysDir = if ($contents) { Get-SubItem $contents "4200000000000010" } else { $null }
 
 $switchDir = Get-SubItem $sd "switch"
 $guiDir = Get-SubItem $switchDir "gdrive-sync"
-
-if (-not $sysDir -or -not $guiDir) {
-    Write-Error "Target folders on Switch SD not found."
-    exit 1
+if (-not $guiDir) {
+    $switchDir.GetFolder.NewFolder("gdrive-sync")
+    Start-Sleep -Seconds 1
+    $guiDir = Get-SubItem $switchDir "gdrive-sync"
 }
 
-# 2. Setup Drain Folder to silently clear old binaries
+# 2. Setup Drain Folder to silently clear old binaries and sysmodule
 $drainName = "__mtp_drain_" + [System.Guid]::NewGuid().ToString().Substring(0, 8)
 $sd.GetFolder.NewFolder($drainName)
 Start-Sleep -Seconds 1
 $drainItem = Get-SubItem $sd $drainName
 $drainFolder = $drainItem.GetFolder
 
-Write-Host "Draining existing binaries from MTP..." -ForegroundColor Yellow
+Write-Host "Draining old binaries / decommissioned sysmodule from MTP..." -ForegroundColor Yellow
 
-$oldExefs = Get-SubItem $sysDir "exefs.nsp"
-if ($oldExefs) {
-    $drainFolder.MoveHere($oldExefs, 4 -bor 16 -bor 512 -bor 1024)
-    Start-Sleep -Seconds 1
+if ($sysDir) {
+    Write-Host "  Draining atmosphere/contents/4200000000000010..." -ForegroundColor Yellow
+    $drainFolder.MoveHere($sysDir, 4 -bor 16 -bor 512 -bor 1024)
+    Start-Sleep -Seconds 2
 }
 
 $oldNro = Get-SubItem $guiDir "gdrive-sync.nro"
@@ -74,10 +69,6 @@ if ($oldNro) {
 }
 
 # 3. Deploy New Binaries
-Write-Host "Copying fresh exefs.nsp (Sysmodule) to Switch..." -ForegroundColor Yellow
-$sysDir.GetFolder.CopyHere((Resolve-Path $exefsLocal).Path, 16 -bor 4)
-Start-Sleep -Seconds 2
-
 Write-Host "Copying fresh gdrive-sync.nro (GUI App) to Switch..." -ForegroundColor Yellow
 $guiDir.GetFolder.CopyHere((Resolve-Path $nroLocal).Path, 16 -bor 4)
 Start-Sleep -Seconds 3
@@ -88,15 +79,13 @@ $drainFolder.Items() | ForEach-Object {
 }
 
 Write-Host "`n-- Verification on Switch SD --" -ForegroundColor Green
-$newExefs = Get-SubItem $sysDir "exefs.nsp"
 $newNro = Get-SubItem $guiDir "gdrive-sync.nro"
 
-if ($newExefs -and $newNro) {
-    Write-Host "  [OK] exefs.nsp successfully installed ($($newExefs.Size) bytes)" -ForegroundColor Green
+if ($newNro) {
     Write-Host "  [OK] gdrive-sync.nro successfully installed ($($newNro.Size) bytes)" -ForegroundColor Green
     Write-Host "`nDeployment completed with 100% SUCCESS!" -ForegroundColor Cyan
 } else {
-    Write-Error "Deployment verification failed: One or more binaries missing."
+    Write-Error "Deployment verification failed: gdrive-sync.nro missing."
     exit 1
 }
 

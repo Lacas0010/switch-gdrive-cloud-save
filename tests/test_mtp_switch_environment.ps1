@@ -36,22 +36,12 @@ function Get-MtpFolder($parent, $name) {
     return $parent.GetFolder.Items() | Where-Object { $_.Name -eq $name }
 }
 
-# 2. Verify Sysmodule Deployment Path
-Write-Host "`n-- Verifying Sysmodule Files on SD --" -ForegroundColor Yellow
+# 2. Verify Sysmodule Decommissioning (0 MB RAM consumed)
+Write-Host "`n-- Verifying Sysmodule Removal on SD (Zero RAM) --" -ForegroundColor Yellow
 $atmos = Get-MtpFolder $sd "atmosphere"
 $contents = Get-MtpFolder $atmos "contents"
 $sysmodDir = Get-MtpFolder $contents "4200000000000010"
-Assert-Test "Sysmodule Directory Exists" ($sysmodDir -ne $null) "atmosphere/contents/4200000000000010 not found"
-
-$exefs = Get-MtpFolder $sysmodDir "exefs.nsp"
-Assert-Test "Sysmodule exefs.nsp Present" ($exefs -ne $null) "exefs.nsp missing in sysmodule dir"
-
-$toolbox = Get-MtpFolder $sysmodDir "toolbox.json"
-Assert-Test "Sysmodule toolbox.json Present" ($toolbox -ne $null) "toolbox.json missing"
-
-$flags = Get-MtpFolder $sysmodDir "flags"
-$boot2 = if ($flags) { Get-MtpFolder $flags "boot2.flag" } else { $null }
-Assert-Test "Sysmodule boot2.flag Active" ($boot2 -ne $null) "boot2.flag not present"
+Assert-Test "Sysmodule Daemon Absent (Zero Background RAM)" ($sysmodDir -eq $null) "atmosphere/contents/4200000000000010 must not exist"
 
 # 3. Verify GUI Homebrew App (.NRO)
 Write-Host "`n-- Verifying GUI App (.nro) on SD --" -ForegroundColor Yellow
