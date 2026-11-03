@@ -14,7 +14,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET          := gdrive-sync
 BUILD           := build
 SOURCES         := ../src ../src/core ../src/network ../src/storage ../src/ui ../src/utils
-INCLUDES        := ../src ../src/core ../src/network ../src/storage ../src/ui ../src/utils
+INCLUDES        := include ../src ../src/core ../src/network ../src/storage ../src/ui ../src/utils
 
 APP_TITLE       := Google Drive Sync
 APP_AUTHOR      := Lacas0010
@@ -22,7 +22,7 @@ APP_VERSION     := 0.1.0
 
 ARCH            := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS          := -g -Wall -Wextra -Wpedantic -Wconversion -Wshadow -O2 -ffunction-sections -fdata-sections \
+CFLAGS          := -g -Wall -O2 -ffunction-sections -fdata-sections \
                    $(ARCH) $(DEFINES)
 
 CXXFLAGS        := $(CFLAGS) -std=gnu++20 -fno-rtti -fno-exceptions
@@ -50,6 +50,7 @@ CPPFILES        := ../src/main.cpp \
                    ../src/network/oauth_manager.cpp \
                    ../src/storage/save_manager.cpp \
                    ../src/storage/zip_util.cpp \
+                   ../src/ui/font_renderer.cpp \
                    ../src/ui/texture_cache.cpp \
                    ../src/ui/screen_main.cpp \
                    ../src/ui/screen_select.cpp \
@@ -102,6 +103,58 @@ LDFLAGS         := -specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,-Map,$(OUT
 $(OUTPUT).elf: $(OFILES)
 	@echo "Ligando $(notdir $@)..."
 	@$(CXX) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
+
+main.o: $(TOPDIR)/../src/main.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+sync_engine.o: $(TOPDIR)/../src/core/sync_engine.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+drive_client.o: $(TOPDIR)/../src/network/drive_client.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+oauth_manager.o: $(TOPDIR)/../src/network/oauth_manager.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+save_manager.o: $(TOPDIR)/../src/storage/save_manager.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+zip_util.o: $(TOPDIR)/../src/storage/zip_util.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+font_renderer.o: $(TOPDIR)/../src/ui/font_renderer.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+texture_cache.o: $(TOPDIR)/../src/ui/texture_cache.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+screen_main.o: $(TOPDIR)/../src/ui/screen_main.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+screen_select.o: $(TOPDIR)/../src/ui/screen_select.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+ui_manager.o: $(TOPDIR)/../src/ui/ui_manager.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+log.o: $(TOPDIR)/../src/utils/log.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+
+time_util.o: $(TOPDIR)/../src/utils/time_util.cpp
+	@echo "Compilando $(notdir $<)..."
+	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 %.o: %.cpp
 	@echo "Compilando $(notdir $<)..."
