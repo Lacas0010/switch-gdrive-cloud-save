@@ -8,7 +8,8 @@ namespace Core {
         GAME_SELECT,
         SETTINGS,
         OAUTH_MODAL,
-        OPERATION_PROGRESS
+        OPERATION_PROGRESS,
+        HELP_MODAL
     };
 
     enum class OperationType {

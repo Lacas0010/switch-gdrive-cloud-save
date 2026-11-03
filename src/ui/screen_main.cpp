@@ -135,7 +135,7 @@ namespace UI {
         };
 
         drawBtn("(A)", "Confirmar");
-        drawBtn("(B)", "Voltar");
+        drawBtn("(X)", "Guia & Ajuda");
         drawBtn("(-)", "Configurações");
         drawBtn("(+)", "Sair");
     }

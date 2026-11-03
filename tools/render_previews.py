@@ -5,7 +5,7 @@ def get_font(size, bold=False):
     try:
         font_name = "segoeuib.ttf" if bold else "segoeui.ttf"
         return ImageFont.truetype(f"C:\\Windows\\Fonts\\{font_name}", size)
-    except:
+    except Exception:
         return ImageFont.load_default()
 
 class SwitchModernRenderer:
@@ -116,7 +116,6 @@ class SwitchModernRenderer:
             bg_c = (22, 65, 50, 255)
             sym_c = (230, 190, 70, 255)
             self.fill_rounded_rect(x, y, size, size, 8, bg_c)
-            # Tri-force sutil
             mx, my = x + size // 2, y + size // 2
             self.draw.polygon([(mx, my - 14), (mx - 12, my + 10), (mx + 12, my + 10)], outline=sym_c, fill=None)
         elif game_theme == "mario":
@@ -152,17 +151,17 @@ class SwitchModernRenderer:
         self.draw.line([(0, h_h - 1), (self.width, h_h - 1)], fill=(38, 46, 64, 255))
 
         self.fill_rounded_rect(self.s(24), self.s(20), self.s(5), self.s(30), self.s(3), (0, 210, 255, 255))
-        self.draw_text(self.s(38), self.s(16), "Google Drive Sync", (255, 255, 255, 255), self.s(20), bold=True)
+        self.draw_text(self.s(38), self.s(16), "Google Drive Cloud Save", (255, 255, 255, 255), self.s(20), bold=True)
         self.draw_text(self.s(40), self.s(42), "v0.1.0  •  Nintendo Switch Cloud Backup", (135, 148, 170, 255), self.s(13))
 
         net_x = self.width - self.s(240)
         self.fill_circle(net_x, self.s(35), self.s(5), (46, 204, 113, 255))
-        self.draw_text(net_x + self.s(12), self.s(25), "Online", (255, 255, 255, 255), self.s(15), bold=True)
+        self.draw_text(net_x + self.s(12), self.s(25), "● Conectado", (255, 255, 255, 255), self.s(15), bold=True)
 
         mode_x = self.width - self.s(130)
         self.fill_rounded_rect(mode_x, self.s(24), self.s(95), self.s(24), self.s(6), (18, 22, 31, 255))
         self.draw_rounded_rect_outline(mode_x, self.s(24), self.s(95), self.s(24), self.s(6), (38, 46, 64, 255), 1)
-        mode_str = "1080p Dock" if self.width == 1920 else "720p Portatil"
+        mode_str = "1080p Dock" if self.width == 1920 else "720p Portátil"
         self.draw_text(mode_x + self.s(10), self.s(27), mode_str, (0, 210, 255, 255), self.s(11), bold=True)
 
     def render_footer(self, items):
@@ -194,42 +193,42 @@ def render_main_screen():
 
     px = lx + 26
     ry = ly + 24
-    r.draw_text(px, ry, "STATUS DO SISTEMA", (135, 148, 170, 255), 13, bold=True)
+    r.draw_text(px, ry, "STATUS DO CONSOLE", (135, 148, 170, 255), 13, bold=True)
     ry += 26
     r.draw.line([(lx + 20, ry), (lx + lw - 20, ry)], fill=(38, 46, 64, 255))
 
     ry += 22
-    r.draw_text(px, ry, "Perfil Local:", (135, 148, 170, 255), 14)
+    r.draw_text(px, ry, "Perfil Switch:", (135, 148, 170, 255), 14)
     ry += 20
-    r.draw_text(px, ry, "Lucas (Switch)", (255, 255, 255, 255), 16, bold=True)
+    r.draw_text(px, ry, "01000000-0000...", (255, 255, 255, 255), 16, bold=True)
 
     ry += 36
-    r.draw_text(px, ry, "Conta Google Drive:", (135, 148, 170, 255), 14)
+    r.draw_text(px, ry, "Pasta no Google Drive:", (135, 148, 170, 255), 14)
     ry += 20
-    r.draw_text(px, ry, "Conectada (OAuth 2.0)", (46, 204, 113, 255), 16, bold=True)
+    r.draw_text(px, ry, "Switch Saves", (0, 210, 255, 255), 16, bold=True)
 
     ry += 36
-    r.draw_text(px, ry, "Pasta de Destino:", (135, 148, 170, 255), 14)
+    r.draw_text(px, ry, "Status da Conexão:", (135, 148, 170, 255), 14)
     ry += 20
-    r.draw_text(px, ry, "/Switch Saves", (0, 210, 255, 255), 16, bold=True)
+    r.draw_text(px, ry, "Pronto para Sincronia", (46, 204, 113, 255), 16, bold=True)
 
     ry += 36
-    r.draw_text(px, ry, "Ultimo Backup:", (135, 148, 170, 255), 14)
+    r.draw_text(px, ry, "Último Backup:", (135, 148, 170, 255), 14)
     ry += 20
     r.draw_text(px, ry, "Hoje, 09:42 UTC", (235, 240, 250, 255), 15)
 
     ry += 36
-    r.draw_text(px, ry, "Jogos com Save:", (135, 148, 170, 255), 14)
+    r.draw_text(px, ry, "Jogos Rastreados:", (135, 148, 170, 255), 14)
     ry += 20
-    r.draw_text(px, ry, "5 titulos detectados", (255, 255, 255, 255), 15)
+    r.draw_text(px, ry, "5 títulos detectados", (255, 255, 255, 255), 15)
 
     ry += 36
-    r.draw_text(px, ry, "Integridade:", (135, 148, 170, 255), 14)
+    r.draw_text(px, ry, "Integridade dos Dados:", (135, 148, 170, 255), 14)
     ry += 20
-    r.draw_text(px, ry, "Checksum CRC32 & RTC", (135, 148, 170, 255), 14)
+    r.draw_text(px, ry, "Checksum CRC32 & RTC Ativo", (135, 148, 170, 255), 14)
 
     hint_y = ly + lh - 40
-    r.draw_text(px, hint_y, "[-] Configuracoes avancadas", (135, 148, 170, 255), 12)
+    r.draw_text(px, hint_y, "[-] Configurações avançadas", (135, 148, 170, 255), 12)
 
     rx = lx + lw + 24
     rw = 1280 - rx - 30
@@ -240,8 +239,8 @@ def render_main_screen():
     actions = [
         ("upload",   "Backup Completo",    "Envia todos os saves do perfil ativo para o Google Drive", (0, 210, 255, 255)),
         ("download", "Restaurar da Nuvem", "Atualiza saves locais que estejam mais recentes na nuvem", (46, 204, 113, 255)),
-        ("gamepad",  "Gerenciar por Jogo", "Visualizar historico, selecionar titulos e definir favoritos", (40, 120, 255, 255)),
-        ("google",   "Vincular Conta Google", "Autenticar via codigo na tela em google.com/device", (255, 186, 0, 255)),
+        ("gamepad",  "Gerenciar por Jogo", "Visualizar histórico, selecionar títulos e restaurar snapshots", (40, 120, 255, 255)),
+        ("google",   "Vincular Conta Google", "Autenticar via código na tela em google.com/device", (255, 186, 0, 255)),
     ]
 
     for idx, (atype, title, sub, color) in enumerate(actions):
@@ -280,9 +279,9 @@ def render_main_screen():
 
     r.render_footer([
         {"btn": "A", "label": "Confirmar", "color": (255, 60, 86, 255)},
-        {"btn": "B", "label": "Sair", "color": (85, 92, 108, 255)},
-        {"pill": "-", "label": "Configuracoes"},
-        {"pill": "+", "label": "Fechar App"}
+        {"btn": "X", "label": "Guia & Ajuda", "color": (40, 120, 255, 255)},
+        {"pill": "-", "label": "Configurações"},
+        {"pill": "+", "label": "Sair"}
     ])
 
     return r.img
@@ -299,7 +298,7 @@ def render_manage_games_screen():
     games = [
         ("The Legend of Zelda: Tears of the Kingdom", "0x0100F2C0115B6000", "48.20 MB", True, True, "zelda"),
         ("Super Mario Odyssey",                        "0x0100000000010000", "12.45 MB", True, True, "mario"),
-        ("Pokemon Legends: Arceus",                   "0x01001F5010DFA000", "18.30 MB", False, False, "pokemon"),
+        ("Pokémon Legends: Arceus",                   "0x01001F5010DFA000", "18.30 MB", False, False, "pokemon"),
         ("Metroid Prime Remastered",                  "0x010012101468C000", "6.75 MB",  True, True, "metroid"),
         ("Animal Crossing: New Horizons",             "0x01006F8002326000", "32.10 MB", False, False, "animal"),
     ]
@@ -331,7 +330,7 @@ def render_manage_games_screen():
             r.fill_rounded_rect(chk_x, chk_y, chk_w, chk_h, 6, (24, 29, 41, 255))
             r.draw_rounded_rect_outline(chk_x, chk_y, chk_w, chk_h, 6, (135, 148, 170, 255), 2)
 
-        # ÍCONE OFICIAL DO JOGO (JPEG decodificado e cacheado em miniatura com cantos arredondados)
+        # Ícone do jogo
         icon_size = 56
         icon_x = chk_x + chk_w + 16
         icon_y = item_y + (item_h - icon_size) // 2
@@ -352,7 +351,7 @@ def render_manage_games_screen():
     r.render_footer([
         {"btn": "A", "label": "Alternar", "color": (255, 60, 86, 255)},
         {"btn": "Y", "label": "Todos/Nenhum", "color": (255, 205, 0, 255)},
-        {"btn": "X", "label": "Salvar Favoritos", "color": (40, 120, 255, 255)},
+        {"btn": "X", "label": "Histórico", "color": (40, 120, 255, 255)},
         {"pill": "+", "label": "Iniciar Backup"},
         {"btn": "B", "label": "Voltar", "color": (85, 92, 108, 255)}
     ])
@@ -367,14 +366,14 @@ def render_settings_screen():
     cx, cw = 60, 1160
     sy = 100
 
-    r.draw_text(cx, sy, "CONFIGURACOES DO SISTEMA", (135, 148, 170, 255), 14, bold=True)
+    r.draw_text(cx, sy, "CONFIGURAÇÕES DO SISTEMA", (135, 148, 170, 255), 14, bold=True)
     sy += 28
 
     items = [
-        ("Pasta de Destino no Google Drive", "Diretorio raiz onde os backups sao armazenados no Drive", "Switch Saves"),
-        ("Google OAuth Client ID",           "Identificador da aplicacao registrado no Google Cloud Console", "[Configurado]"),
-        ("Google OAuth Client Secret",       "Chave de autenticacao privada do OAuth 2.0", "[••••••••••••]"),
-        ("Testar Conexao com o Drive",       "Valida certificados SSL e permissoes de escrita na pasta", "Pressione A para testar"),
+        ("Pasta de Destino no Google Drive", "Diretório raiz onde os backups são armazenados no Drive", "Switch Saves"),
+        ("Google OAuth Client ID",           "Identificador da aplicação registrado no Google Cloud Console", "[Configurado]"),
+        ("Google OAuth Client Secret",       "Chave de autenticação privada do OAuth 2.0", "[••••••••••••]"),
+        ("Testar Conexão com o Drive",       "Valida certificados SSL e permissões de escrita na pasta", "Pressione A para testar"),
     ]
 
     item_h = 105
@@ -405,11 +404,12 @@ def render_settings_screen():
     return r.img
 
 def render_oauth_modal():
+    base = render_main_screen()
     r = SwitchModernRenderer(1280, 720)
-    r.clear_gradient()
-    r.render_header()
+    r.img.paste(base, (0, 0))
 
-    r.draw.rectangle([0, 0, 1280, 720], fill=(0, 0, 0, 160))
+    # Overlay escuro
+    r.draw.rectangle([0, 0, 1280, 720], fill=(0, 0, 0, 180))
 
     mw, mh = 740, 460
     mx = (1280 - mw) // 2
@@ -420,17 +420,17 @@ def render_oauth_modal():
 
     r.draw_google_icon(mx + 45, my + 42, 32)
     r.draw_text(mx + 85, my + 26, "Vincular Conta Google", (255, 255, 255, 255), 22, bold=True)
-    r.draw_text(mx + 85, my + 54, "Autorizacao de Dispositivo (OAuth 2.0)", (135, 148, 170, 255), 14)
+    r.draw_text(mx + 85, my + 54, "Autorização de Dispositivo (OAuth 2.0)", (135, 148, 170, 255), 14)
 
     r.draw.line([(mx + 30, my + 84), (mx + mw - 30, my + 84)], fill=(38, 46, 64, 255))
 
     ty = my + 108
-    r.draw_text(mx + 45, ty, "1. Acesse o endereco abaixo no seu celular ou computador:", (255, 255, 255, 255), 15)
+    r.draw_text(mx + 45, ty, "1. Acesse o endereço abaixo no seu celular ou computador:", (255, 255, 255, 255), 15)
     ty += 28
     r.draw_text(mx + 65, ty, "https://www.google.com/device", (0, 210, 255, 255), 18, bold=True)
 
     ty += 42
-    r.draw_text(mx + 45, ty, "2. Digite o codigo de ativacao exibido:", (255, 255, 255, 255), 15)
+    r.draw_text(mx + 45, ty, "2. Digite o código de ativação exibido:", (255, 255, 255, 255), 15)
 
     ty += 26
     code_w, code_h = 420, 68
@@ -443,7 +443,7 @@ def render_oauth_modal():
     r.draw_text(code_x + (code_w - tw) // 2, ty + 16, user_code, (255, 186, 0, 255), 28, bold=True)
 
     ty += 92
-    r.draw_text(mx + 45, ty, "3. Faca login e confirme as permissoes de acesso.", (255, 255, 255, 255), 15)
+    r.draw_text(mx + 45, ty, "3. Faça login e confirme as permissões de acesso.", (255, 255, 255, 255), 15)
 
     ty += 38
     bar_w, bar_h = mw - 90, 8
@@ -451,7 +451,7 @@ def render_oauth_modal():
     r.fill_rounded_rect(bar_x, ty, bar_w, bar_h, 4, (38, 46, 64, 255))
     r.fill_rounded_rect(bar_x, ty, int(bar_w * 0.45), bar_h, 4, (46, 204, 113, 255))
 
-    r.draw_text(mx + 45, ty + 18, "Aguardando confirmacao do navegador...", (135, 148, 170, 255), 13)
+    r.draw_text(mx + 45, ty + 18, "Aguardando confirmação do navegador...", (135, 148, 170, 255), 13)
 
     btn_y = my + mh - 48
     r.draw_btn_badge(mx + mw - 150, btn_y, "B", (85, 92, 108, 255), 11)
@@ -459,13 +459,145 @@ def render_oauth_modal():
 
     return r.img
 
-# Gerar todas as imagens
-main_img = render_main_screen()
-main_img.save("previews/01_main_menu.png")
-main_img.convert("RGB").save("screenshot.jpg", quality=95)
+def render_help_modal():
+    base = render_main_screen()
+    r = SwitchModernRenderer(1280, 720)
+    r.img.paste(base, (0, 0))
 
-render_settings_screen().save("previews/02_settings.png")
-render_manage_games_screen().save("previews/03_manage_games.png")
-render_oauth_modal().save("previews/04_oauth_modal.png")
+    # Overlay escuro
+    r.draw.rectangle([0, 0, 1280, 720], fill=(0, 0, 0, 180))
 
-print("Previews atualizadas com sucesso incluindo miniatura de ícone oficial do jogo!")
+    mw, mh = 860, 500
+    mx = (1280 - mw) // 2
+    my = (720 - mh) // 2
+
+    # Modal Card
+    r.fill_rounded_rect(mx, my, mw, mh, 16, (24, 29, 41, 255))
+    r.draw_rounded_rect_outline(mx, my, mw, mh, 16, (0, 210, 255, 255), 2)
+
+    # Header Card
+    r.fill_rounded_rect(mx, my, mw, 64, 16, (13, 15, 20, 255))
+    r.draw.line([(mx, my + 64), (mx + mw, my + 64)], fill=(38, 46, 64, 255))
+
+    r.draw_text(mx + 32, my + 16, "Guia do Utilizador & Ajuda", (255, 255, 255, 255), 22, bold=True)
+    r.draw_text(mx + 32, my + 42, "Google Drive Cloud Save Suite para Nintendo Switch", (0, 210, 255, 255), 13)
+
+    cur_y = my + 84
+
+    # Seção 1: Como Funciona
+    r.draw_text(mx + 32, cur_y, "Como Funciona a Sincronização:", (255, 205, 0, 255), 15, bold=True)
+    cur_y += 24
+    r.draw_text(mx + 44, cur_y, "• Sincronização sob demanda: executa backups e restaurações apenas quando solicitado.", (235, 240, 250, 255), 14)
+    cur_y += 22
+    r.draw_text(mx + 44, cur_y, "• Execução em primeiro plano: sem processos em segundo plano ou impacto de desempenho.", (235, 240, 250, 255), 14)
+    cur_y += 22
+    r.draw_text(mx + 44, cur_y, "• Saves empacotados em PKZIP e validados por verificação de integridade CRC32 bloco a bloco.", (235, 240, 250, 255), 14)
+
+    cur_y += 34
+    # Seção 2: Requisitos e Proteção de Dados
+    r.draw_text(mx + 32, cur_y, "Requisitos & Proteção de Dados:", (255, 205, 0, 255), 15, bold=True)
+    cur_y += 24
+    r.draw_text(mx + 44, cur_y, "• Credenciais OAuth 2.0 armazenadas com segurança em sdmc:/config/gdrive-sync/config.json.", (235, 240, 250, 255), 14)
+    cur_y += 22
+    r.draw_text(mx + 44, cur_y, "• Backup preventivo automático local gerado antes de qualquer restauração para save:/.", (235, 240, 250, 255), 14)
+    cur_y += 22
+    r.draw_text(mx + 44, cur_y, "• Trava de segurança temporal RTC: impede substituição acidental se o relógio estiver descalibrado.", (235, 240, 250, 255), 14)
+
+    cur_y += 34
+    # Seção 3: Controlos da Interface
+    r.draw_text(mx + 32, cur_y, "Controlos da Interface:", (255, 205, 0, 255), 15, bold=True)
+    cur_y += 24
+    r.draw_text(mx + 44, cur_y, "• [D-Pad / Analógico]: Navegar pelas opções e listas de jogos", (235, 240, 250, 255), 14)
+    cur_y += 22
+    r.draw_text(mx + 44, cur_y, "• [A]: Confirmar / [B]: Voltar ou Cancelar / [-]: Configurações / [+]: Sair", (235, 240, 250, 255), 14)
+
+    # Footer do Modal
+    r.draw.line([(mx, my + mh - 52), (mx + mw, my + mh - 52)], fill=(38, 46, 64, 255))
+    btn_y = my + mh - 38
+    r.draw_btn_badge(mx + mw - 140, btn_y - 2, "B", (85, 92, 108, 255), 11)
+    r.draw_text(mx + mw - 110, btn_y, "Fechar", (0, 210, 255, 255), 15, bold=True)
+
+    return r.img
+
+def render_upload_summary_modal():
+    base = render_main_screen()
+    r = SwitchModernRenderer(1280, 720)
+    r.img.paste(base, (0, 0))
+
+    # Overlay escuro
+    r.draw.rectangle([0, 0, 1280, 720], fill=(0, 0, 0, 180))
+
+    mw, mh = 740, 420
+    mx = (1280 - mw) // 2
+    my = (720 - mh) // 2
+
+    # Modal Card com contorno verde de sucesso
+    r.fill_rounded_rect(mx, my, mw, mh, 16, (24, 29, 41, 255))
+    r.draw_rounded_rect_outline(mx, my, mw, mh, 16, (46, 204, 113, 255), 2)
+
+    # Header Card
+    r.fill_rounded_rect(mx, my, mw, 64, 16, (13, 15, 20, 255))
+    r.draw.line([(mx, my + 64), (mx + mw, my + 64)], fill=(38, 46, 64, 255))
+
+    # Ícone e Título de Sucesso
+    r.fill_circle(mx + 42, my + 32, 16, (46, 204, 113, 255))
+    r.draw_cloud_icon(mx + 42, my + 32, 22, (18, 21, 30, 255), True)
+
+    r.draw_text(mx + 72, my + 16, "Upload Concluído com Sucesso!", (46, 204, 113, 255), 22, bold=True)
+    r.draw_text(mx + 72, my + 42, "Sincronização com o Google Drive finalizada e validada", (135, 148, 170, 255), 13)
+
+    cur_y = my + 92
+    r.draw_text(mx + 36, cur_y, "Estatísticas da Operação:", (255, 205, 0, 255), 16, bold=True)
+    cur_y += 32
+
+    r.draw_text(mx + 48, cur_y, "• Saves sincronizados com sucesso: 5 jogos", (46, 204, 113, 255), 15, bold=True)
+    cur_y += 28
+
+    r.draw_text(mx + 48, cur_y, "• Falhas ou erros de envio: 0", (135, 148, 170, 255), 15)
+    cur_y += 28
+
+    r.draw_text(mx + 48, cur_y, "• Pasta de destino na nuvem: \"Switch Saves/\"", (0, 210, 255, 255), 15)
+    cur_y += 28
+
+    r.draw_text(mx + 48, cur_y, "• Histórico versionado salvo em snapshots com CRC32 verificado.", (235, 240, 250, 255), 15)
+    cur_y += 28
+
+    r.draw_text(mx + 48, cur_y, "• Backup local de segurança preservado em sdmc:/config/gdrive-sync/backups/.", (135, 148, 170, 255), 14)
+
+    # Footer do Modal
+    r.draw.line([(mx, my + mh - 54), (mx + mw, my + mh - 54)], fill=(38, 46, 64, 255))
+    btn_y = my + mh - 40
+    r.draw_btn_badge(mx + mw - 160, btn_y - 2, "A", (255, 60, 86, 255), 11)
+    r.draw_text(mx + mw - 130, btn_y, "Continuar", (0, 210, 255, 255), 15, bold=True)
+
+    return r.img
+
+if __name__ == "__main__":
+    # 1. Main menu e screenshot
+    main_img = render_main_screen()
+    main_img.save("previews/01_main_menu.png")
+    main_img.convert("RGB").save("screenshot.jpg", quality=95)
+
+    # 2. Seleção de Jogos (armazenado sob os dois nomes para consistência total)
+    manage_games_img = render_manage_games_screen()
+    manage_games_img.save("previews/02_games_selection.png")
+    manage_games_img.save("previews/03_manage_games.png")
+
+    # 3. Configurações
+    settings_img = render_settings_screen()
+    settings_img.save("previews/02_settings.png")
+
+    # 4. Modal de Guia & Ajuda (moderno, vetorizado, português com acentos)
+    help_img = render_help_modal()
+    help_img.save("previews/03_help_modal.png")
+
+    # 5. OAuth Modal (armazenado sob os dois nomes)
+    oauth_img = render_oauth_modal()
+    oauth_img.save("previews/04_oauth_device_flow.png")
+    oauth_img.save("previews/04_oauth_modal.png")
+
+    # 6. Resumo pós-upload (moderno, vetorizado, português com acentos)
+    summary_img = render_upload_summary_modal()
+    summary_img.save("previews/05_upload_summary.png")
+
+    print("Todas as previews geradas com renderização vetorial e suporte UTF-8 nativo!")

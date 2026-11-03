@@ -100,53 +100,66 @@
             gap: 2px;
         }
 
-        .dpad-btn, .face-btn {
-            background: #1a1e28;
-            color: #fff;
-            border: 1px solid #364259;
-            border-radius: 50%;
+        .dpad-btn {
+            background: #1c2230;
+            border: 1px solid #2e384d;
+            border-radius: 4px;
+            color: #8794aa;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 11px;
-            font-weight: bold;
             cursor: pointer;
-            transition: transform 0.1s, background 0.1s;
+            font-size: 11px;
         }
 
-        .dpad-btn:active, .face-btn:active, .pill-btn:active {
-            transform: scale(0.9);
-            background: #3b4866;
+        .dpad-btn:active {
+            background: #00d2ff;
+            color: #fff;
         }
 
         .face-cluster {
             display: grid;
             grid-template-columns: repeat(3, 22px);
             grid-template-rows: repeat(3, 22px);
-            gap: 3px;
+            gap: 2px;
+        }
+
+        .face-btn {
+            background: #1c2230;
+            border: 1px solid #2e384d;
+            border-radius: 50%;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 11px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+        }
+
+        .face-btn:active {
+            background: #ff3c56;
         }
 
         .pill-btn {
-            background: #1a1e28;
-            border: 1px solid #364259;
-            color: #fff;
-            border-radius: 6px;
-            padding: 3px 8px;
+            background: #1c2230;
+            border: 1px solid #2e384d;
+            border-radius: 8px;
+            color: #8794aa;
+            padding: 4px 10px;
             font-size: 11px;
             font-weight: bold;
             cursor: pointer;
         }
 
-        /* Tela Central */
         .screen-container {
             width: 854px;
             height: 480px;
-            background: #000;
-            border-radius: 8px;
+            background: #0b0d12;
             overflow: hidden;
+            border: 8px solid #000;
             position: relative;
-            box-shadow: inset 0 0 15px rgba(0,0,0,0.8);
-            margin: 0 10px;
         }
 
         canvas {
@@ -239,10 +252,10 @@
     <div class="keyboard-hints">
         <div class="hint-badge"><kbd>▲</kbd> <kbd>▼</kbd> Navegar</div>
         <div class="hint-badge"><kbd>Enter</kbd> ou <kbd>Z</kbd> (A) Confirmar / Marcar</div>
-        <div class="hint-badge"><kbd>Esc</kbd> ou <kbd>X</kbd> (B) Voltar / Sair</div>
-        <div class="hint-badge"><kbd>-</kbd> ou <kbd>Y</kbd> Configuracoes</div>
+        <div class="hint-badge"><kbd>Esc</kbd> ou <kbd>B</kbd> (B) Voltar / Fechar</div>
+        <div class="hint-badge"><kbd>X</kbd> (X) Guia & Ajuda / Histórico</div>
+        <div class="hint-badge"><kbd>-</kbd> ou <kbd>Y</kbd> Configurações</div>
         <div class="hint-badge"><kbd>C</kbd> ou <kbd>Espaço</kbd> (Y) Todos/Nenhum</div>
-        <div class="hint-badge"><kbd>Shift</kbd> (X) Salvar Favoritos</div>
         <div class="hint-badge"><kbd>+</kbd> Iniciar Backup / Fechar App</div>
     </div>
 
@@ -251,7 +264,7 @@
         const ctx = canvas.getContext('2d');
 
         // Máquina de Estados
-        let currentScreen = 'MAIN'; // 'MAIN', 'SETTINGS', 'MANAGE_GAMES', 'DEVICE_AUTH', 'SUMMARY'
+        let currentScreen = 'MAIN'; // 'MAIN', 'SETTINGS', 'MANAGE_GAMES', 'DEVICE_AUTH', 'SUMMARY', 'HELP'
         let mainSelectedIndex = 0;
         let settingsSelectedIndex = 0;
         let gamesSelectedIndex = 0;
@@ -272,7 +285,7 @@
         const games = [
             { name: "The Legend of Zelda: Tears of the Kingdom", tid: "0x0100F2C0115B6000", size: "48.20 MB", selected: true, favorite: true },
             { name: "Super Mario Odyssey",                        tid: "0x0100000000010000", size: "12.45 MB", selected: true, favorite: true },
-            { name: "Pokemon Legends: Arceus",                   tid: "0x01001F5010DFA000", size: "18.30 MB", selected: false, favorite: false },
+            { name: "Pokémon Legends: Arceus",                   tid: "0x01001F5010DFA000", size: "18.30 MB", selected: false, favorite: false },
             { name: "Metroid Prime Remastered",                  tid: "0x010012101468C000", size: "6.75 MB",  selected: true, favorite: true },
             { name: "Animal Crossing: New Horizons",             tid: "0x01006F8002326000", size: "32.10 MB", selected: false, favorite: false },
         ];
@@ -281,16 +294,16 @@
         const mainActions = [
             { title: "Backup Completo",    sub: "Envia todos os saves do perfil ativo para o Google Drive", color: "#00d2ff", type: "upload" },
             { title: "Restaurar da Nuvem", sub: "Atualiza saves locais que estejam mais recentes na nuvem", color: "#2ecc71", type: "download" },
-            { title: "Gerenciar por Jogo", sub: "Visualizar historico, selecionar titulos e definir favoritos", color: "#2878ff", type: "gamepad" },
-            { title: "Vincular Conta Google", sub: "Autenticar via codigo na tela em google.com/device", color: "#ffba00", type: "google" }
+            { title: "Gerenciar por Jogo", sub: "Visualizar histórico, selecionar títulos e restaurar snapshots", color: "#2878ff", type: "gamepad" },
+            { title: "Vincular Conta Google", sub: "Autenticar via código na tela em google.com/device", color: "#ffba00", type: "google" }
         ];
 
         // Configurações
         const settingsItems = [
-            { title: "Pasta de Destino no Google Drive", desc: "Diretorio raiz onde os backups sao armazenados no Drive", val: "Switch Saves" },
-            { title: "Google OAuth Client ID",           desc: "Identificador da aplicacao registrado no Google Cloud Console", val: "[Configurado]" },
-            { title: "Google OAuth Client Secret",       desc: "Chave de autenticacao privada do OAuth 2.0", val: "[••••••••••••]" },
-            { title: "Testar Conexao com o Drive",       desc: "Valida certificados SSL e permissoes de escrita na pasta", val: "Pressione A para testar" }
+            { title: "Pasta de Destino no Google Drive", desc: "Diretório raiz onde os backups são armazenados no Drive", val: "Switch Saves" },
+            { title: "Google OAuth Client ID",           desc: "Identificador da aplicação registrado no Google Cloud Console", val: "[Configurado]" },
+            { title: "Google OAuth Client Secret",       desc: "Chave de autenticação privada do OAuth 2.0", val: "[••••••••••••]" },
+            { title: "Testar Conexão com o Drive",       desc: "Valida certificados SSL e permissões de escrita na pasta", val: "Pressione A para testar" }
         ];
 
         // Helpers de Desenho
@@ -402,18 +415,18 @@
             ctx.fillRect(0, 69, 1280, 1);
 
             fillRoundedRect(24, 20, 5, 30, 3, "#00d2ff");
-            drawText(38, 16, "Google Drive Sync", "#ffffff", 20, true);
+            drawText(38, 16, "Google Drive Cloud Save", "#ffffff", 20, true);
             drawText(40, 42, "v0.1.0  •  Nintendo Switch Cloud Backup", "#8794aa", 13);
 
             // Online
             ctx.fillStyle = "#2ecc71";
             ctx.beginPath(); ctx.arc(1040, 35, 5, 0, Math.PI * 2); ctx.fill();
-            drawText(1054, 25, "Online", "#ffffff", 15, true);
+            drawText(1054, 25, "● Conectado", "#ffffff", 15, true);
 
             // Dock / Portátil
             fillRoundedRect(1150, 24, 95, 24, 6, "#12161f");
             strokeRoundedRect(1150, 24, 95, 24, 6, "#262e40", 1);
-            drawText(1160, 27, "720p Portatil", "#00d2ff", 11, true);
+            drawText(1160, 27, "720p Portátil", "#00d2ff", 11, true);
         }
 
         function renderFooter(items) {
@@ -463,41 +476,41 @@
 
             const px = lx + 26;
             let ry = ly + 24;
-            drawText(px, ry, "STATUS DO SISTEMA", "#8794aa", 13, true);
+            drawText(px, ry, "STATUS DO CONSOLE", "#8794aa", 13, true);
             ry += 26;
             ctx.fillStyle = "#262e40"; ctx.fillRect(lx + 20, ry, lw - 40, 1);
 
             ry += 22;
-            drawText(px, ry, "Perfil Local:", "#8794aa", 14);
+            drawText(px, ry, "Perfil Switch:", "#8794aa", 14);
             ry += 20;
-            drawText(px, ry, "Lucas (Switch)", "#ffffff", 16, true);
+            drawText(px, ry, "01000000-0000...", "#ffffff", 16, true);
 
             ry += 36;
-            drawText(px, ry, "Conta Google Drive:", "#8794aa", 14);
+            drawText(px, ry, "Pasta no Google Drive:", "#8794aa", 14);
             ry += 20;
-            drawText(px, ry, "Conectada (OAuth 2.0)", "#2ecc71", 16, true);
+            drawText(px, ry, "Switch Saves", "#00d2ff", 16, true);
 
             ry += 36;
-            drawText(px, ry, "Pasta de Destino:", "#8794aa", 14);
+            drawText(px, ry, "Status da Conexão:", "#8794aa", 14);
             ry += 20;
-            drawText(px, ry, "/Switch Saves", "#00d2ff", 16, true);
+            drawText(px, ry, "Pronto para Sincronia", "#2ecc71", 16, true);
 
             ry += 36;
-            drawText(px, ry, "Ultimo Backup:", "#8794aa", 14);
+            drawText(px, ry, "Último Backup:", "#8794aa", 14);
             ry += 20;
             drawText(px, ry, "Hoje, 09:42 UTC", "#ebf0fa", 15);
 
             ry += 36;
-            drawText(px, ry, "Jogos com Save:", "#8794aa", 14);
+            drawText(px, ry, "Jogos Rastreados:", "#8794aa", 14);
             ry += 20;
-            drawText(px, ry, `${games.length} titulos detectados`, "#ffffff", 15);
+            drawText(px, ry, `${games.length} títulos detectados`, "#ffffff", 15);
 
             ry += 36;
-            drawText(px, ry, "Integridade:", "#8794aa", 14);
+            drawText(px, ry, "Integridade dos Dados:", "#8794aa", 14);
             ry += 20;
-            drawText(px, ry, "Checksum CRC32 & RTC", "#8794aa", 14);
+            drawText(px, ry, "Checksum CRC32 & RTC Ativo", "#8794aa", 14);
 
-            drawText(px, ly + lh - 40, "[-] Configuracoes avancadas", "#8794aa", 12);
+            drawText(px, ly + lh - 40, "[-] Configurações avançadas", "#8794aa", 12);
 
             // Painel Direito: 4 Ações
             const rx = lx + lw + 24;
@@ -541,8 +554,8 @@
 
             renderFooter([
                 { btn: "A", label: "Confirmar", color: "#ff3c56" },
-                { btn: "B", label: "Sair", color: "#555c6c" },
-                { pill: "-", label: "Configuracoes" },
+                { btn: "X", label: "Guia & Ajuda", color: "#00d2ff" },
+                { pill: "-", label: "Configurações" },
                 { pill: "+", label: "Fechar App" }
             ]);
         }
@@ -556,7 +569,7 @@
 
             const cx = 60, cw = 1160;
             let sy = 100;
-            drawText(cx, sy, "CONFIGURACOES DO SISTEMA", "#8794aa", 14, true);
+            drawText(cx, sy, "CONFIGURAÇÕES DO SISTEMA", "#8794aa", 14, true);
             sy += 28;
 
             const itemH = 105, itemGap = 14;
@@ -638,7 +651,7 @@
 
                 const tx = iconX + iconSize + 18;
                 drawText(tx, itemY + 14, game.name, "#ffffff", 18, true);
-                drawText(tx, itemY + 42, `Title ID: ${game.tid}   •   Tamanho: ${game.size}`, isFocused ? "#00d2ff" : "#8794aa", 14);
+                drawText(tx, itemY + 42, f`Title ID: ${game.tid}   •   Tamanho: ${game.size}`, isFocused ? "#00d2ff" : "#8794aa", 14);
 
                 if (game.favorite) {
                     const favX = cardX + cardW - 120;
@@ -655,7 +668,7 @@
             renderFooter([
                 { btn: "A", label: "Alternar", color: "#ff3c56" },
                 { btn: "Y", label: "Todos/Nenhum", color: "#ffcd00" },
-                { btn: "X", label: "Salvar Favoritos", color: "#2878ff" },
+                { btn: "X", label: "Histórico", color: "#2878ff" },
                 { pill: "+", label: "Iniciar Backup" },
                 { btn: "B", label: "Voltar", color: "#555c6c" }
             ]);
@@ -664,7 +677,7 @@
         function renderOAuthModal() {
             renderMainScreen();
 
-            ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+            ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
             ctx.fillRect(0, 0, 1280, 720);
 
             const mw = 740, mh = 460;
@@ -675,18 +688,18 @@
 
             drawGoogleIcon(mx + 45, my + 42, 32);
             drawText(mx + 85, my + 26, "Vincular Conta Google", "#ffffff", 22, true);
-            drawText(mx + 85, my + 54, "Autorizacao de Dispositivo (OAuth 2.0)", "#8794aa", 14);
+            drawText(mx + 85, my + 54, "Autorização de Dispositivo (OAuth 2.0)", "#8794aa", 14);
 
             ctx.fillStyle = "#262e40";
             ctx.fillRect(mx + 30, my + 84, mw - 60, 1);
 
             let ty = my + 108;
-            drawText(mx + 45, ty, "1. Acesse o endereco abaixo no seu celular ou computador:", "#ffffff", 15);
+            drawText(mx + 45, ty, "1. Acesse o endereço abaixo no seu celular ou computador:", "#ffffff", 15);
             ty += 28;
             drawText(mx + 65, ty, "https://www.google.com/device", "#00d2ff", 18, true);
 
             ty += 42;
-            drawText(mx + 45, ty, "2. Digite o codigo de ativacao exibido:", "#ffffff", 15);
+            drawText(mx + 45, ty, "2. Digite o código de ativação exibido:", "#ffffff", 15);
 
             ty += 26;
             const codeW = 420, codeH = 68;
@@ -696,13 +709,13 @@
             drawText(codeX + 140, ty + 18, "ABCD-EFGH", "#ffba00", 28, true);
 
             ty += 92;
-            drawText(mx + 45, ty, "3. Faca login e confirme as permissoes de acesso.", "#ffffff", 15);
+            drawText(mx + 45, ty, "3. Faça login e confirme as permissões de acesso.", "#ffffff", 15);
 
             ty += 38;
             const barW = mw - 90, barH = 8;
             fillRoundedRect(mx + 45, ty, barW, barH, 4, "#262e40");
             fillRoundedRect(mx + 45, ty, (Date.now() / 15) % (barW - 40) + 40, barH, 4, "#2ecc71");
-            drawText(mx + 45, ty + 18, "Aguardando confirmacao do navegador...", "#8794aa", 13);
+            drawText(mx + 45, ty + 18, "Aguardando confirmação do navegador...", "#8794aa", 13);
 
             const btnY = my + mh - 48;
             drawBtnBadge(mx + mw - 150, btnY, "B", "#555c6c");
@@ -712,29 +725,104 @@
         function renderSummaryModal() {
             renderMainScreen();
 
-            ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+            ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
             ctx.fillRect(0, 0, 1280, 720);
 
-            const mw = 720, mh = 380;
+            const mw = 740, mh = 420;
             const mx = (1280 - mw) / 2, my = (720 - mh) / 2;
 
-            fillRoundedRect(mx, my, mw, mh, 14, "#181d29");
-            strokeRoundedRect(mx, my, mw, mh, 14, "#2ecc71", 2);
+            fillRoundedRect(mx, my, mw, mh, 16, "#181d29");
+            strokeRoundedRect(mx, my, mw, mh, 16, "#2ecc71", 2);
 
-            drawText(mx + 36, my + 30, "Backup Concluido", "#ffffff", 22, true);
+            fillRoundedRect(mx, my, mw, 64, 16, "#0d0f14");
             ctx.fillStyle = "#262e40";
-            ctx.fillRect(mx + 36, my + 68, mw - 72, 1);
+            ctx.fillRect(mx, my + 64, mw, 1);
 
-            let ty = my + 96;
-            drawText(mx + 40, ty, "Arquivos processados com sucesso: 3", "#2ecc71", 16, true);
-            ty += 32;
-            drawText(mx + 40, ty, "Falhas ou erros de envio: 0", "#8794aa", 16);
-            ty += 36;
-            drawText(mx + 40, ty, "Todos os arquivos estao seguros e sincronizados no Google Drive.", "#8794aa", 15);
+            ctx.fillStyle = "#2ecc71";
+            ctx.beginPath(); ctx.arc(mx + 42, my + 32, 16, 0, Math.PI * 2); ctx.fill();
+            drawCloudIcon(mx + 42, my + 32, 22, "#12151e", true);
 
-            const btnY = my + mh - 52;
-            drawBtnBadge(mx + mw - 160, btnY, "A", "#ff3c56");
-            drawText(mx + mw - 130, btnY + 2, "Continuar", "#ffffff", 15);
+            drawText(mx + 72, my + 16, "Upload Concluído com Sucesso!", "#2ecc71", 22, true);
+            drawText(mx + 72, my + 42, "Sincronização com o Google Drive finalizada e validada", "#8794aa", 13);
+
+            let curY = my + 92;
+            drawText(mx + 36, curY, "Estatísticas da Operação:", "#ffcd00", 16, true);
+            curY += 32;
+
+            drawText(mx + 48, curY, "• Saves sincronizados com sucesso: 5 jogos", "#2ecc71", 15, true);
+            curY += 28;
+
+            drawText(mx + 48, curY, "• Falhas ou erros de envio: 0", "#8794aa", 15);
+            curY += 28;
+
+            drawText(mx + 48, curY, "• Pasta de destino na nuvem: \"Switch Saves/\"", "#00d2ff", 15);
+            curY += 28;
+
+            drawText(mx + 48, curY, "• Histórico versionado salvo em snapshots com CRC32 verificado.", "#ebf0fa", 15);
+            curY += 28;
+
+            drawText(mx + 48, curY, "• Backup local de segurança preservado em sdmc:/config/gdrive-sync/backups/.", "#8794aa", 14);
+
+            ctx.fillStyle = "#262e40";
+            ctx.fillRect(mx, my + mh - 54, mw, 1);
+            const btnY = my + mh - 40;
+            drawBtnBadge(mx + mw - 160, btnY - 2, "A", "#ff3c56");
+            drawText(mx + mw - 130, btnY, "Continuar", "#00d2ff", 15, true);
+        }
+
+        function renderHelpModal() {
+            renderMainScreen();
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
+            ctx.fillRect(0, 0, 1280, 720);
+
+            const mw = 860, mh = 500;
+            const mx = (1280 - mw) / 2, my = (720 - mh) / 2;
+
+            fillRoundedRect(mx, my, mw, mh, 16, "#181d29");
+            strokeRoundedRect(mx, my, mw, mh, 16, "#00d2ff", 2);
+
+            fillRoundedRect(mx, my, mw, 64, 16, "#0d0f14");
+            ctx.fillStyle = "#262e40";
+            ctx.fillRect(mx, my + 64, mw, 1);
+
+            drawText(mx + 32, my + 16, "Guia do Utilizador & Ajuda", "#ffffff", 22, true);
+            drawText(mx + 32, my + 42, "Google Drive Cloud Save Suite para Nintendo Switch", "#00d2ff", 13);
+
+            let curY = my + 84;
+            // Seção 1
+            drawText(mx + 32, curY, "Como Funciona a Sincronização:", "#ffcd00", 15, true);
+            curY += 24;
+            drawText(mx + 44, curY, "• Sincronização sob demanda: executa backups e restaurações apenas quando solicitado.", "#ebf0fa", 14);
+            curY += 22;
+            drawText(mx + 44, curY, "• Execução em primeiro plano: sem processos em segundo plano ou impacto de desempenho.", "#ebf0fa", 14);
+            curY += 22;
+            drawText(mx + 44, curY, "• Saves empacotados em PKZIP e validados por verificação de integridade CRC32 bloco a bloco.", "#ebf0fa", 14);
+
+            curY += 34;
+            // Seção 2
+            drawText(mx + 32, curY, "Requisitos & Proteção de Dados:", "#ffcd00", 15, true);
+            curY += 24;
+            drawText(mx + 44, curY, "• Credenciais OAuth 2.0 armazenadas com segurança em sdmc:/config/gdrive-sync/config.json.", "#ebf0fa", 14);
+            curY += 22;
+            drawText(mx + 44, curY, "• Backup preventivo automático local gerado antes de qualquer restauração para save:/.", "#ebf0fa", 14);
+            curY += 22;
+            drawText(mx + 44, curY, "• Trava de segurança temporal RTC: impede substituição acidental se o relógio estiver descalibrado.", "#ebf0fa", 14);
+
+            curY += 34;
+            // Seção 3
+            drawText(mx + 32, curY, "Controlos da Interface:", "#ffcd00", 15, true);
+            curY += 24;
+            drawText(mx + 44, curY, "• [D-Pad / Analógico]: Navegar pelas opções e listas de jogos", "#ebf0fa", 14);
+            curY += 22;
+            drawText(mx + 44, curY, "• [A]: Confirmar / [B]: Voltar ou Cancelar / [-]: Configurações / [+]: Sair", "#ebf0fa", 14);
+
+            // Footer
+            ctx.fillStyle = "#262e40";
+            ctx.fillRect(mx, my + mh - 52, mw, 1);
+            const btnY = my + mh - 38;
+            drawBtnBadge(mx + mw - 140, btnY - 2, "B", "#555c6c");
+            drawText(mx + mw - 110, btnY, "Fechar", "#00d2ff", 15, true);
         }
 
         // Loop Principal
@@ -744,6 +832,7 @@
             else if (currentScreen === 'MANAGE_GAMES') renderManageGamesScreen();
             else if (currentScreen === 'DEVICE_AUTH') renderOAuthModal();
             else if (currentScreen === 'SUMMARY') renderSummaryModal();
+            else if (currentScreen === 'HELP') renderHelpModal();
 
             requestAnimationFrame(loop);
         }
@@ -770,6 +859,8 @@
                     } else if (mainSelectedIndex === 3) {
                         currentScreen = 'DEVICE_AUTH';
                     }
+                } else if (code === 'KeyX' || code === 'KeyH') {
+                    currentScreen = 'HELP';
                 } else if (code === 'Minus' || code === 'KeyY') {
                     currentScreen = 'SETTINGS';
                     settingsSelectedIndex = 0;
@@ -781,11 +872,11 @@
                     if (settingsSelectedIndex < 3) settingsSelectedIndex++;
                 } else if (code === 'Enter' || code === 'KeyZ' || code === 'KeyA') {
                     if (settingsSelectedIndex === 3) {
-                        showToast("Conexao ativa e pasta validada com sucesso!", "#2ecc71");
+                        showToast("Conexão ativa e pasta validada com sucesso!", "#2ecc71");
                     } else {
-                        showToast("Configuracao salva com sucesso.", "#2ecc71");
+                        showToast("Configuração salva com sucesso.", "#2ecc71");
                     }
-                } else if (code === 'Escape' || code === 'KeyX' || code === 'KeyB' || code === 'Minus') {
+                } else if (code === 'Escape' || code === 'KeyB' || code === 'Minus') {
                     currentScreen = 'MAIN';
                 }
             } else if (currentScreen === 'MANAGE_GAMES') {
@@ -806,8 +897,8 @@
                     showToast("Iniciando upload dos selecionados...", "#00d2ff");
                     setTimeout(() => { currentScreen = 'SUMMARY'; }, 600);
                 }
-            } else if (currentScreen === 'DEVICE_AUTH' || currentScreen === 'SUMMARY') {
-                if (code === 'Escape' || code === 'KeyX' || code === 'KeyB' || code === 'Enter' || code === 'KeyZ' || code === 'KeyA') {
+            } else if (currentScreen === 'DEVICE_AUTH' || currentScreen === 'SUMMARY' || currentScreen === 'HELP') {
+                if (code === 'Escape' || code === 'KeyB' || code === 'Enter' || code === 'KeyZ' || code === 'KeyA' || code === 'KeyX') {
                     currentScreen = 'MAIN';
                 }
             }

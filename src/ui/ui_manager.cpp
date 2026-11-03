@@ -57,6 +57,8 @@ namespace UI {
                 }
             } else if ((kDown & HidNpadButton_Minus) || (kDown & HidNpadButton_Y)) {
                 m_stateMachine.setScreen(Core::Screen::SETTINGS);
+            } else if (kDown & HidNpadButton_X) {
+                m_stateMachine.setScreen(Core::Screen::HELP_MODAL);
             }
 #endif
         } else if (curScreen == Core::Screen::GAME_SELECT) {
@@ -67,6 +69,7 @@ namespace UI {
             }
 #endif
         } else if (curScreen == Core::Screen::SETTINGS) {
+            m_screenSelect.handleInput(kDown);
 #ifdef __SWITCH__
             if (kDown & HidNpadButton_B) {
                 m_stateMachine.setScreen(Core::Screen::MAIN);
@@ -74,6 +77,12 @@ namespace UI {
                 if (m_settingsOption == 0) {
                     m_engine.startTestConnection();
                 }
+            }
+#endif
+        } else if (curScreen == Core::Screen::HELP_MODAL) {
+#ifdef __SWITCH__
+            if ((kDown & HidNpadButton_B) || (kDown & HidNpadButton_A)) {
+                m_stateMachine.setScreen(Core::Screen::MAIN);
             }
 #endif
         } else if (curScreen == Core::Screen::OAUTH_MODAL) {
@@ -155,7 +164,7 @@ namespace UI {
         m_display.drawRoundedRect(modalX, modalY, modalW, 64, 16, Colors::HEADER_BG);
         m_display.drawText(modalX + 28, modalY + 20, "Vincular Conta Google", 22, Colors::TEXT_WHITE);
 
-        m_display.drawText(modalX + 28, modalY + 90, "1. No celular ou PC, acerte a URL no navegador:", 16, Colors::TEXT_MUTED);
+        m_display.drawText(modalX + 28, modalY + 90, "1. No celular ou computador, acesse o endereço abaixo:", 16, Colors::TEXT_MUTED);
         m_display.drawText(modalX + 28, modalY + 116, m_oauth.getVerificationUrl(), 20, Colors::JOYCON_CYAN);
 
         m_display.drawText(modalX + 28, modalY + 160, "2. Digite o código exibido abaixo:", 16, Colors::TEXT_MUTED);
@@ -175,8 +184,8 @@ namespace UI {
     void UIManager::renderOperationModal() {
         m_display.drawRect(0, 0, static_cast<int>(m_display.getWidth()), static_cast<int>(m_display.getHeight()), RGBA(0, 0, 0, 180));
 
-        int modalW = 680;
-        int modalH = 360;
+        int modalW = 720;
+        int modalH = 390;
         int modalX = (static_cast<int>(m_display.getWidth()) - modalW) / 2;
         int modalY = (static_cast<int>(m_display.getHeight()) - modalH) / 2;
 
@@ -184,38 +193,104 @@ namespace UI {
         m_display.drawRoundedRect(modalX, modalY, modalW, 64, 16, Colors::HEADER_BG);
 
         bool running = m_engine.isRunning();
-        std::string title = running ? "Sincronização em Andamento" : "Operação Concluída";
-        m_display.drawText(modalX + 28, modalY + 20, title, 22, Colors::TEXT_WHITE);
+        if (running) {
+            m_display.drawText(modalX + 32, modalY + 20, "Sincronização em Andamento", 22, Colors::TEXT_WHITE);
 
-        m_display.drawText(modalX + 28, modalY + 90, m_engine.getCurrentGame(), 20, Colors::JOYCON_CYAN);
-        m_display.drawText(modalX + 28, modalY + 120, m_engine.getStatusDetail(), 16, Colors::TEXT_MUTED);
+            m_display.drawText(modalX + 32, modalY + 90, m_engine.getCurrentGame(), 20, Colors::JOYCON_CYAN);
+            m_display.drawText(modalX + 32, modalY + 120, m_engine.getStatusDetail(), 16, Colors::TEXT_MUTED);
 
-        // Barra de progresso
-        int barX = modalX + 28;
-        int barY = modalY + 170;
-        int barW = modalW - 56;
-        int barH = 14;
+            // Barra de progresso
+            int barX = modalX + 32;
+            int barY = modalY + 170;
+            int barW = modalW - 64;
+            int barH = 14;
 
-        m_display.drawRoundedRect(barX, barY, barW, barH, 6, Colors::CARD_ALT_BG);
-        float p = std::clamp(m_engine.getProgress(), 0.0f, 1.0f);
-        int fillW = static_cast<int>(static_cast<float>(barW) * p);
-        if (fillW > 0) {
-            m_display.drawRoundedRect(barX, barY, fillW, barH, 6, Colors::JOYCON_CYAN);
-        }
+            m_display.drawRoundedRect(barX, barY, barW, barH, 6, Colors::CARD_ALT_BG);
+            float p = std::clamp(m_engine.getProgress(), 0.0f, 1.0f);
+            int fillW = static_cast<int>(static_cast<float>(barW) * p);
+            if (fillW > 0) {
+                m_display.drawRoundedRect(barX, barY, fillW, barH, 6, Colors::JOYCON_CYAN);
+            }
 
-        char pctBuf[16];
-        std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", static_cast<int>(p * 100.0f));
-        m_display.drawText(modalX + modalW - 68, barY + 24, pctBuf, 14, Colors::TEXT_MUTED);
+            char pctBuf[16];
+            std::snprintf(pctBuf, sizeof(pctBuf), "%d%%", static_cast<int>(p * 100.0f));
+            m_display.drawText(modalX + modalW - 80, barY + 24, pctBuf, 14, Colors::TEXT_MUTED);
 
-        if (!running) {
-            auto summary = m_engine.getSummary();
-            std::string resText = summary.success ? "Todos os saves foram sincronizados com sucesso!" : "Concluído com avisos/erros. Verifique o sync.log.";
-            u32 col = summary.success ? Colors::STATUS_GREEN : Colors::JOYCON_YELLOW;
-            m_display.drawText(modalX + 28, modalY + 240, resText, 16, col);
-            m_display.drawText(modalX + 28, modalY + modalH - 36, "(A) ou (B) Fechar", 16, Colors::JOYCON_CYAN);
+            m_display.drawText(modalX + 32, modalY + modalH - 36, "(B) Cancelar Operação", 16, Colors::TEXT_MUTED);
         } else {
-            m_display.drawText(modalX + 28, modalY + modalH - 36, "(B) Cancelar Operação", 16, Colors::TEXT_MUTED);
+            auto summary = m_engine.getSummary();
+            std::string title = summary.success ? "Upload Concluído com Sucesso!" : "Operação Concluída com Avisos";
+            u32 titleColor = summary.success ? Colors::STATUS_GREEN : Colors::JOYCON_YELLOW;
+            m_display.drawText(modalX + 32, modalY + 20, title, 22, titleColor);
+
+            int statY = modalY + 90;
+            m_display.drawText(modalX + 32, statY, "Estatísticas da Operação:", 16, Colors::JOYCON_YELLOW);
+            statY += 28;
+
+            char sBuf[96];
+            std::snprintf(sBuf, sizeof(sBuf), "• Saves sincronizados com sucesso: %d", summary.successCount);
+            m_display.drawText(modalX + 44, statY, sBuf, 15, Colors::STATUS_GREEN);
+            statY += 26;
+
+            std::snprintf(sBuf, sizeof(sBuf), "• Falhas ou erros de envio: %d", summary.failCount);
+            m_display.drawText(modalX + 44, statY, sBuf, 15, summary.failCount == 0 ? Colors::TEXT_MUTED : Colors::STATUS_RED);
+            statY += 26;
+
+            m_display.drawText(modalX + 44, statY, "• Pasta de destino na nuvem: \"Switch Saves/\"", 15, Colors::JOYCON_CYAN);
+            statY += 26;
+
+            m_display.drawText(modalX + 44, statY, "• Histórico versionado salvo em snapshots com CRC32 verificado.", 15, Colors::TEXT_PRIMARY);
+
+            m_display.drawRect(modalX, modalY + modalH - 52, modalW, 1, Colors::CARD_OUTLINE);
+            m_display.drawText(modalX + modalW - 160, modalY + modalH - 36, "(A) Continuar", 16, Colors::JOYCON_CYAN);
         }
+    }
+
+    void UIManager::renderHelpModal() {
+        m_display.drawRect(0, 0, static_cast<int>(m_display.getWidth()), static_cast<int>(m_display.getHeight()), RGBA(0, 0, 0, 180));
+
+        int modalW = 860;
+        int modalH = 500;
+        int modalX = (static_cast<int>(m_display.getWidth()) - modalW) / 2;
+        int modalY = (static_cast<int>(m_display.getHeight()) - modalH) / 2;
+
+        m_display.drawRoundedRect(modalX, modalY, modalW, modalH, 16, Colors::CARD_BG);
+        m_display.drawRoundedRect(modalX, modalY, modalW, 64, 16, Colors::HEADER_BG);
+        m_display.drawText(modalX + 32, modalY + 18, "Guia do Utilizador & Ajuda", 24, Colors::TEXT_WHITE);
+        m_display.drawText(modalX + 32, modalY + 44, "Google Drive Cloud Save Suite para Nintendo Switch", 13, Colors::JOYCON_CYAN);
+
+        int curY = modalY + 84;
+
+        // Seção 1: Como Funciona
+        m_display.drawText(modalX + 32, curY, "Como Funciona a Sincronização:", 16, Colors::JOYCON_YELLOW);
+        curY += 24;
+        m_display.drawText(modalX + 44, curY, "• Sincronização sob demanda: executa backups e restaurações apenas quando solicitado.", 14, Colors::TEXT_PRIMARY);
+        curY += 22;
+        m_display.drawText(modalX + 44, curY, "• Execução em primeiro plano: sem processos em segundo plano ou impacto de desempenho.", 14, Colors::TEXT_PRIMARY);
+        curY += 22;
+        m_display.drawText(modalX + 44, curY, "• Saves empacotados em PKZIP e validados por verificação de integridade CRC32 bloco a bloco.", 14, Colors::TEXT_PRIMARY);
+
+        curY += 34;
+        // Seção 2: Requisitos e Proteção de Dados
+        m_display.drawText(modalX + 32, curY, "Requisitos & Proteção de Dados:", 16, Colors::JOYCON_YELLOW);
+        curY += 24;
+        m_display.drawText(modalX + 44, curY, "• Credenciais OAuth 2.0 armazenadas com segurança em sdmc:/config/gdrive-sync/config.json.", 14, Colors::TEXT_PRIMARY);
+        curY += 22;
+        m_display.drawText(modalX + 44, curY, "• Backup preventivo automático local gerado antes de qualquer restauração para save:/.", 14, Colors::TEXT_PRIMARY);
+        curY += 22;
+        m_display.drawText(modalX + 44, curY, "• Trava de segurança temporal RTC: impede substituição acidental se o relógio estiver descalibrado.", 14, Colors::TEXT_PRIMARY);
+
+        curY += 34;
+        // Seção 3: Controlos da Interface
+        m_display.drawText(modalX + 32, curY, "Controlos da Interface:", 16, Colors::JOYCON_YELLOW);
+        curY += 24;
+        m_display.drawText(modalX + 44, curY, "• [D-Pad / Analógico]: Navegar pelas opções e listas de jogos", 14, Colors::TEXT_PRIMARY);
+        curY += 22;
+        m_display.drawText(modalX + 44, curY, "• [A]: Confirmar / [B]: Voltar ou Cancelar / [-]: Configurações / [+]: Sair", 14, Colors::TEXT_PRIMARY);
+
+        // Rodapé
+        m_display.drawRect(modalX, modalY + modalH - 52, modalW, 1, Colors::CARD_OUTLINE);
+        m_display.drawText(modalX + modalW - 130, modalY + modalH - 36, "(B) Fechar", 16, Colors::JOYCON_CYAN);
     }
 
     void UIManager::render() {
@@ -234,6 +309,8 @@ namespace UI {
             renderOAuthModal();
         } else if (curScreen == Core::Screen::OPERATION_PROGRESS) {
             renderOperationModal();
+        } else if (curScreen == Core::Screen::HELP_MODAL) {
+            renderHelpModal();
         }
 
         m_display.endFrame();

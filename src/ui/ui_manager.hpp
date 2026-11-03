@@ -30,6 +30,7 @@ namespace UI {
         void renderSettingsModal();
         void renderOAuthModal();
         void renderOperationModal();
+        void renderHelpModal();
 
         Core::StateMachine& m_stateMachine;
         Core::SyncEngine& m_engine;
