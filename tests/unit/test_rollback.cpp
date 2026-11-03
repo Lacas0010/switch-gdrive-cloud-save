@@ -192,8 +192,14 @@ TEST_CASE("Transactional Restore Engine - Preventive Backup & Atomic Rollback", 
         fwrite(origContent, 1, sizeof(origContent), of);
         fclose(of);
 
-        // 2. Usa o fixture de save propositalmente corrompido
-        std::string corruptedZip = "tests/fixtures/corrupted_save.zip";
+        // 2. Prepara arquivo ZIP propositalmente corrompido
+        std::string corruptedZip = testRoot + "/corrupted_save.zip";
+        FILE* cf = fopen(corruptedZip.c_str(), "wb");
+        if (cf) {
+            const char junk[64] = "PK\x03\x04INVALID_CORRUPTED_ZIP_HEADER_DATA_STREAM_TEST";
+            fwrite(junk, 1, sizeof(junk), cf);
+            fclose(cf);
+        }
 
         // 3. Executa restauracao
         TransactionResult tr = executeTransactionalRestore(testTitleId, testUid, corruptedZip, saveDir, backupDir);
