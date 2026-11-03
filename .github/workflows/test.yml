@@ -15,10 +15,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies (C++ & zlib)
+      - name: Install system dependencies (C++, zlib & curl)
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential zlib1g-dev
+          sudo apt-get install -y build-essential zlib1g-dev libcurl4-openssl-dev
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5

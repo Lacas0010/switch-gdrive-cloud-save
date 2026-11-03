@@ -32,6 +32,7 @@ static TransactionResult executeTransactionalRestore(
 ) {
     TransactionResult res;
     auto& fsMock = getFsDevMock();
+    (void)fsMock;
 
     // 1. Validacao previa do arquivo zip recebido
     struct stat st;
@@ -175,7 +176,8 @@ TEST_CASE("Transactional Restore Engine - Preventive Backup & Atomic Rollback", 
         FILE* rf = fopen(originalFile.c_str(), "rb");
         REQUIRE(rf != nullptr);
         char readBuf[128] = {0};
-        fread(readBuf, 1, sizeof(readBuf), rf);
+        size_t bytesRead = fread(readBuf, 1, sizeof(readBuf) - 1, rf);
+        (void)bytesRead;
         fclose(rf);
         REQUIRE(std::string(readBuf) == "NEW_UPDATED_SAVE_FROM_CLOUD");
     }
@@ -208,7 +210,8 @@ TEST_CASE("Transactional Restore Engine - Preventive Backup & Atomic Rollback", 
         FILE* rf = fopen(originalFile.c_str(), "rb");
         REQUIRE(rf != nullptr);
         char readBuf[128] = {0};
-        fread(readBuf, 1, sizeof(readBuf), rf);
+        size_t bytesRead = fread(readBuf, 1, sizeof(readBuf) - 1, rf);
+        (void)bytesRead;
         fclose(rf);
         REQUIRE(std::string(readBuf) == "CRITICAL_PROGRESS_DO_NOT_LOSE_THIS");
     }

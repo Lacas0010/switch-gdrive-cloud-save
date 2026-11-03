@@ -26,11 +26,13 @@ if [ -n "$CXX_COMPILER" ]; then
     $CXX_COMPILER -std=c++17 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -O2 \
         -I"${ROOT_DIR}/src" \
         -I"${SCRIPT_DIR}/unit" \
+        -I"${ROOT_DIR}/source" \
         test_main.cpp \
         test_timestamp.cpp \
         test_crc32_zip.cpp \
         test_sync_decision.cpp \
         test_rollback.cpp \
+        "${ROOT_DIR}/source/ZipHelper.cpp" \
         "${ROOT_DIR}/src/storage/zip_util.cpp" \
         "${ROOT_DIR}/src/utils/time_util.cpp" \
         "${ROOT_DIR}/src/utils/log.cpp" \

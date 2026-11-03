@@ -1104,6 +1104,8 @@ enum { // languageID for STBTT_PLATFORM_ID_MAC
 ////
 
 #ifdef STB_TRUETYPE_IMPLEMENTATION
+#ifndef STBTT_IMPLEMENTATION_INCLUDED
+#define STBTT_IMPLEMENTATION_INCLUDED
 
 #ifndef STBTT_MAX_OVERSAMPLE
 #define STBTT_MAX_OVERSAMPLE   8
@@ -4970,6 +4972,7 @@ STBTT_DEF int stbtt_CompareUTF8toUTF16_bigendian(const char *s1, int len1, const
 #pragma GCC diagnostic pop
 #endif
 
+#endif // STBTT_IMPLEMENTATION_INCLUDED
 #endif // STB_TRUETYPE_IMPLEMENTATION
 
 

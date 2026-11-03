@@ -1,6 +1,6 @@
+#include "font_renderer.hpp"
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
-#include "font_renderer.hpp"
 #include <cmath>
 #include <algorithm>
 

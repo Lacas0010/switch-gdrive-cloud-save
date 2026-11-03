@@ -31,7 +31,10 @@ struct AccountUid {
 #include <functional>
 #include <string>
 #include <string_view>
+#if __has_include(<curl/curl.h>)
 #include <curl/curl.h>
+#define HAS_LIBCURL_HEADER 1
+#endif
 
 namespace Core {
 
@@ -49,6 +52,7 @@ namespace Core {
         return UniqueFile(std::fopen(path, mode));
     }
 
+#ifdef HAS_LIBCURL_HEADER
     // RAII para instâncias CURL* da libcurl
     struct CurlEasyDeleter {
         void operator()(CURL* handle) const noexcept {
@@ -68,6 +72,7 @@ namespace Core {
         }
     };
     using UniqueCurlSlist = std::unique_ptr<curl_slist, CurlSlistDeleter>;
+#endif
 
     // RAII generico para saida antecipada segura (Scope Exit Guard)
     template <typename F>

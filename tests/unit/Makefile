@@ -1,8 +1,8 @@
 CXX ?= g++
-CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -O2 -I../../src -I.
+CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -O2 -I../../src -I../../source -I.
 LDFLAGS ?= -lz
 
-SRCS = test_main.cpp test_timestamp.cpp test_crc32_zip.cpp test_sync_decision.cpp test_rollback.cpp ../../src/storage/zip_util.cpp ../../src/utils/time_util.cpp ../../src/utils/log.cpp
+SRCS = test_main.cpp test_timestamp.cpp test_crc32_zip.cpp test_sync_decision.cpp test_rollback.cpp ../../source/ZipHelper.cpp ../../src/storage/zip_util.cpp ../../src/utils/time_util.cpp ../../src/utils/log.cpp
 OBJS = $(SRCS:.cpp=.o)
 TARGET = run_unit_tests
 
