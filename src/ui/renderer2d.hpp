@@ -1,10 +1,12 @@
 #pragma once
 #include "../common.hpp"
 #include "font_renderer.hpp"
+#include "../utils/log.hpp"
 #include <cstring>
 #include <cmath>
 #include <string_view>
 #include <algorithm>
+#include <cstdio>
 
 namespace UI {
 
@@ -62,11 +64,24 @@ namespace UI {
         bool init() {
 #ifdef __SWITCH__
             NWindow* win = nwindowGetDefault();
-            m_isDocked = (appletGetOperationMode() == AppletOperationMode_Docked);
+            m_isDocked = (appletGetOperationMode() != AppletOperationMode_Handheld);
             m_width = m_isDocked ? 1920 : 1280;
             m_height = m_isDocked ? 1080 : 720;
-            framebufferCreate(&m_fb, win, m_width, m_height, PIXEL_FORMAT_RGBA_8888, 2);
-            framebufferMakeLinear(&m_fb);
+            Result rc = framebufferCreate(&m_fb, win, m_width, m_height, PIXEL_FORMAT_RGBA_8888, 2);
+            if (R_FAILED(rc)) {
+                char errBuf[64];
+                std::snprintf(errBuf, sizeof(errBuf), "Falha no framebufferCreate: 0x%X", rc);
+                Utils::Logger::log("GFX", errBuf);
+                return false;
+            }
+            rc = framebufferMakeLinear(&m_fb);
+            if (R_FAILED(rc)) {
+                char errBuf[64];
+                std::snprintf(errBuf, sizeof(errBuf), "Falha no framebufferMakeLinear: 0x%X", rc);
+                Utils::Logger::log("GFX", errBuf);
+                framebufferClose(&m_fb);
+                return false;
+            }
             m_initialized = true;
 #else
             m_width = 1280;
@@ -75,7 +90,8 @@ namespace UI {
             m_mockBuffer.resize(static_cast<size_t>(m_width * m_height));
             m_initialized = true;
 #endif
-            return m_font.init();
+            m_font.init();
+            return m_initialized;
         }
 
         void cleanup() {
@@ -90,10 +106,21 @@ namespace UI {
 
         void updateResolutionMode() {
 #ifdef __SWITCH__
-            bool currentDocked = (appletGetOperationMode() == AppletOperationMode_Docked);
+            bool currentDocked = (appletGetOperationMode() != AppletOperationMode_Handheld);
             if (currentDocked != m_isDocked) {
-                cleanup();
-                init();
+                m_isDocked = currentDocked;
+                m_width = m_isDocked ? 1920 : 1280;
+                m_height = m_isDocked ? 1080 : 720;
+                if (m_initialized) {
+                    framebufferClose(&m_fb);
+                    m_initialized = false;
+                }
+                NWindow* win = nwindowGetDefault();
+                Result rc = framebufferCreate(&m_fb, win, m_width, m_height, PIXEL_FORMAT_RGBA_8888, 2);
+                if (R_SUCCEEDED(rc)) {
+                    framebufferMakeLinear(&m_fb);
+                    m_initialized = true;
+                }
             }
 #endif
         }
@@ -123,7 +150,7 @@ namespace UI {
         }
 
         inline void setPixel(int x, int y, u32 color) noexcept {
-            if (x < 0 || x >= static_cast<int>(m_width) || y < 0 || y >= static_cast<int>(m_height)) return;
+            if (!m_framebuffer || x < 0 || x >= static_cast<int>(m_width) || y < 0 || y >= static_cast<int>(m_height)) return;
             u32 a = (color >> 24) & 0xFF;
             if (a == 0) return;
 
