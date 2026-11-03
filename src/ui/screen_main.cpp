@@ -76,7 +76,7 @@ namespace UI {
         // 4. Jogos Rasteados
         m_display.drawText(panelX + 24, curY, "Versão do Sistema", 14, Colors::TEXT_MUTED);
         curY += 22;
-        m_display.drawText(panelX + 24, curY, "v0.1.0 (Produção)", 16, Colors::TEXT_MUTED);
+        m_display.drawText(panelX + 24, curY, "v0.1.1 (Produção)", 16, Colors::TEXT_MUTED);
     }
 
     void ScreenMain::renderRightCards() {

@@ -152,7 +152,7 @@ class SwitchModernRenderer:
 
         self.fill_rounded_rect(self.s(24), self.s(20), self.s(5), self.s(30), self.s(3), (0, 210, 255, 255))
         self.draw_text(self.s(38), self.s(16), "Google Drive Cloud Save", (255, 255, 255, 255), self.s(20), bold=True)
-        self.draw_text(self.s(40), self.s(42), "v0.1.0  •  Nintendo Switch Cloud Backup", (135, 148, 170, 255), self.s(13))
+        self.draw_text(self.s(40), self.s(42), "v0.1.1  •  Nintendo Switch Cloud Backup", (135, 148, 170, 255), self.s(13))
 
         net_x = self.width - self.s(240)
         self.fill_circle(net_x, self.s(35), self.s(5), (46, 204, 113, 255))

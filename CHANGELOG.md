@@ -4,6 +4,19 @@ Todas as alterações notáveis deste projeto são documentadas neste arquivo.
 
 O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.1.1] - 2026-11-03
+
+### Added
+- Modal dedicado de "Guia do Utilizador & Ajuda" (`HELP_MODAL`) acionado pelo botão `(X)` no menu principal.
+- Modal estruturado de resumo pós-operação com validação CRC32 e contorno temático de sucesso.
+
+### Changed
+- Padronização completa de todos os modais da interface gráfica na tipografia vetorial oficial (`pl:u`, `PlSharedFontType_Standard`), eliminando renderizadores bitmap legados.
+- Suporte e normalização integral de caracteres acentuados em português (UTF-8) em todos os textos da UI.
+- Refatoração dos textos de suporte e ajuda para redação técnica, limpa e objetiva.
+
+---
+
 ## [0.1.0] - 2026-11-03
 
 ### Added

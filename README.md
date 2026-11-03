@@ -3,7 +3,7 @@
 Cliente Homebrew para backup e restauração de dados de saves do Nintendo Switch no Google Drive.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.1.0-34A853?style=flat-square" alt="Versão v0.1.0" />
+  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.1.1-34A853?style=flat-square" alt="Versão v0.1.1" />
   <img src="https://img.shields.io/badge/Plataforma-Nintendo%20Switch-E60012?style=flat-square" alt="Nintendo Switch" />
   <img src="https://img.shields.io/badge/CFW-Atmosph%C3%A8re%201.7%2B-00D2FF?style=flat-square" alt="Atmosphere" />
   <img src="https://img.shields.io/badge/Licen%C3%A7a-GPL--3.0-blue?style=flat-square" alt="Licença GPL-3.0" />
