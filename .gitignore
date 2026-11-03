@@ -1,31 +1,90 @@
-# Build artifacts
+# ==============================================================================
+# Google Drive Cloud Save Suite (gdrive-sync) - .gitignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Artefatos de Compilacao e Link-time (devkitPro / devkitA64 / libnx)
+# ------------------------------------------------------------------------------
 build/
 gui/build/
 dist/
+obj/
+out/
 exefs/
+sd_package/
+
+*.o
+*.d
 *.elf
-*.nsp
+*.nacp
 *.nro
 *.nso
-*.nacp
+*.nsp
 *.map
+*.a
+*.so
 main.npdm
 
-# Secrets and credentials
+# ------------------------------------------------------------------------------
+# Seguranca e Credenciais Privadas (CRITICO)
+# ------------------------------------------------------------------------------
 config.json
-*.pem
+*.key
+*.p12
+*.pfx
 auth_request.txt
 state.json
-*.tmp
+!config.example.json
+
+# ------------------------------------------------------------------------------
+# Arquivos Temporarios e Logs de Runtime (Horizon OS / SDMC)
+# ------------------------------------------------------------------------------
+temp/
+pending/
+backups/
+sdmc/
 temp_check/
 temp_switch_logs/
 temp_drain/
 temp_verify/
 mtp_verify/
-# OS generated files
-.DS_Store
-Thumbs.db
-*.swp
-*.bak
+tests_tmp_zip/
+tests_tmp_rollback/
 
-harness/
+*.log
+sync.log
+restore.log
+*.bak
+*.tmp
+*.swp
+
+# ------------------------------------------------------------------------------
+# Python & Test Runner Caches
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ------------------------------------------------------------------------------
+# IDEs e Ambientes de Desenvolvimento
+# ------------------------------------------------------------------------------
+.vscode/
+.idea/
+.cache/
+*.sublime-project
+*.sublime-workspace
+
+# ------------------------------------------------------------------------------
+# Arquivos de Sistema Operacional
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini

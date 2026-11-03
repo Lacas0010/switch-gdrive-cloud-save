@@ -13,16 +13,16 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET          := gdrive-sync
 BUILD           := build
-SOURCES         := source ../source
-INCLUDES        := include source ../source
+SOURCES         := ../src ../src/core ../src/network ../src/storage ../src/ui ../src/utils
+INCLUDES        := ../src ../src/core ../src/network ../src/storage ../src/ui ../src/utils
 
 APP_TITLE       := Google Drive Sync
-APP_AUTHOR      := Antigravity Dev
-APP_VERSION     := 0.0.8
+APP_AUTHOR      := Lacas0010
+APP_VERSION     := 0.1.0
 
 ARCH            := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS          := -g -Wall -O2 -ffunction-sections -fdata-sections \
+CFLAGS          := -g -Wall -Wextra -Wpedantic -Wconversion -Wshadow -O2 -ffunction-sections -fdata-sections \
                    $(ARCH) $(DEFINES)
 
 CXXFLAGS        := $(CFLAGS) -std=gnu++20 -fno-rtti -fno-exceptions
@@ -43,8 +43,19 @@ export TOPDIR   := $(CURDIR)
 export VPATH    := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR  := $(CURDIR)/$(BUILD)
 
-# Compila os modulos da GUI e os modulos core do sistema
-CPPFILES        := source/main.cpp source/OAuthManager.cpp source/DriveVersionManager.cpp source/RestoreManager.cpp ../source/GDriveClient.cpp ../source/SaveManager.cpp ../source/ZipHelper.cpp
+# Compila todos os modulos da arquitetura modular src/
+CPPFILES        := ../src/main.cpp \
+                   ../src/core/sync_engine.cpp \
+                   ../src/network/drive_client.cpp \
+                   ../src/network/oauth_manager.cpp \
+                   ../src/storage/save_manager.cpp \
+                   ../src/storage/zip_util.cpp \
+                   ../src/ui/texture_cache.cpp \
+                   ../src/ui/screen_main.cpp \
+                   ../src/ui/screen_select.cpp \
+                   ../src/ui/ui_manager.cpp \
+                   ../src/utils/log.cpp \
+                   ../src/utils/time_util.cpp
 
 export OFILES   := $(notdir $(CPPFILES:.cpp=.o))
 
@@ -92,39 +103,7 @@ $(OUTPUT).elf: $(OFILES)
 	@echo "Ligando $(notdir $@)..."
 	@$(CXX) $(LDFLAGS) $(OFILES) $(LIBPATHS) $(LIBS) -o $@
 
-main.o: $(TOPDIR)/source/main.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-OAuthManager.o: $(TOPDIR)/source/OAuthManager.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-DriveVersionManager.o: $(TOPDIR)/source/DriveVersionManager.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-RestoreManager.o: $(TOPDIR)/source/RestoreManager.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-GDriveClient.o: $(TOPDIR)/../source/GDriveClient.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-SaveManager.o: $(TOPDIR)/../source/SaveManager.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-ZipHelper.o: $(TOPDIR)/../source/ZipHelper.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-%.o: $(TOPDIR)/source/%.cpp
-	@echo "Compilando $(notdir $<)..."
-	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
-
-%.o: $(TOPDIR)/../source/%.cpp
+%.o: %.cpp
 	@echo "Compilando $(notdir $<)..."
 	@$(CXX) -MMD -MP -MF $(DEPSDIR)/$*.d $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 

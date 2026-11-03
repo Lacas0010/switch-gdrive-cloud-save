@@ -4,11 +4,9 @@
 #include <cmath>
 #include <string>
 #include <algorithm>
-#include "Font8x16.hpp"
+#include "FontRenderer.hpp"
 
 namespace Gfx {
-    constexpr int SCREEN_W = 1280;
-    constexpr int SCREEN_H = 720;
 
     // Converte componentes R, G, B, A (0-255) em formato RGBA8888 de 32 bits
     inline constexpr u32 RGBA(u8 r, u8 g, u8 b, u8 a = 255) {
@@ -18,51 +16,96 @@ namespace Gfx {
                (static_cast<u32>(a) << 24);
     }
 
-    // Paleta de Cores Moderna do Nintendo Switch e Google
+    // Paleta de Cores Moderna no padrão Horizon OS
     namespace Colors {
-        constexpr u32 BG_DARK_TOP    = RGBA(17, 20, 29);
-        constexpr u32 BG_DARK_BOT    = RGBA(24, 29, 44);
-        constexpr u32 HEADER_BG      = RGBA(15, 18, 26);
-        constexpr u32 CARD_BG        = RGBA(26, 32, 48);
-        constexpr u32 CARD_OUTLINE   = RGBA(43, 54, 78);
-        constexpr u32 CARD_HOVER_BG  = RGBA(36, 48, 75);
-        constexpr u32 CARD_HOVER_OUT = RGBA(0, 195, 255);
+        // Planos de Fundo Escuros Elegantes
+        constexpr u32 BG_DARK_TOP    = RGBA(15, 17, 23);
+        constexpr u32 BG_DARK_BOT    = RGBA(21, 25, 36);
+        constexpr u32 HEADER_BG      = RGBA(13, 15, 20);
+        constexpr u32 FOOTER_BG      = RGBA(13, 15, 20);
+        constexpr u32 CARD_BG        = RGBA(24, 29, 41);
+        constexpr u32 CARD_ALT_BG    = RGBA(18, 22, 31);
+        constexpr u32 CARD_OUTLINE   = RGBA(38, 46, 64);
+        constexpr u32 CARD_HOVER_BG  = RGBA(32, 42, 64);
+        constexpr u32 CARD_HOVER_OUT = RGBA(0, 210, 255);
 
         // Acentos Joy-Con Oficiais
         constexpr u32 JOYCON_CYAN    = RGBA(0, 210, 255);
         constexpr u32 JOYCON_RED     = RGBA(255, 60, 86);
         constexpr u32 JOYCON_YELLOW  = RGBA(255, 205, 0);
         constexpr u32 JOYCON_BLUE    = RGBA(40, 120, 255);
-        constexpr u32 JOYCON_GRAY    = RGBA(90, 95, 110);
+        constexpr u32 JOYCON_GRAY    = RGBA(85, 92, 108);
 
-        // Google Drive Colors
+        // Google Drive
         constexpr u32 DRIVE_YELLOW   = RGBA(255, 186, 0);
         constexpr u32 DRIVE_GREEN    = RGBA(0, 172, 71);
         constexpr u32 DRIVE_BLUE     = RGBA(0, 102, 218);
 
-        // Status Colors
+        // Status Suaves
         constexpr u32 STATUS_GREEN   = RGBA(46, 204, 113);
         constexpr u32 STATUS_RED     = RGBA(231, 76, 60);
         constexpr u32 STATUS_YELLOW  = RGBA(241, 196, 15);
         constexpr u32 STATUS_BLUE    = RGBA(52, 152, 219);
 
-        // Typography Colors
+        // Tipografia
         constexpr u32 TEXT_WHITE     = RGBA(255, 255, 255);
-        constexpr u32 TEXT_MUTED     = RGBA(140, 155, 180);
-        constexpr u32 TEXT_DARK      = RGBA(20, 24, 34);
+        constexpr u32 TEXT_PRIMARY   = RGBA(235, 240, 250);
+        constexpr u32 TEXT_MUTED     = RGBA(135, 148, 170);
+        constexpr u32 TEXT_DARK      = RGBA(18, 21, 30);
     }
 
     class Display {
     private:
-        Framebuffer m_fb;
+        Framebuffer m_fb{};
         bool m_initialized = false;
-        u32* m_currentBuf   = nullptr;
-        u32  m_stride       = 0;
+        u32* m_currentBuf  = nullptr;
+        u32  m_stride      = 0;
+
+        int m_width  = 1280;
+        int m_height = 720;
+        float m_scale = 1.0f;
+        AppletOperationMode m_lastOpMode = AppletOperationMode_Handheld;
+
+        FontRenderer m_font;
+
+        void checkAndUpdateResolution() {
+            AppletOperationMode currentOpMode = appletGetOperationMode();
+            if (currentOpMode != m_lastOpMode) {
+                m_lastOpMode = currentOpMode;
+                bool isConsole = (currentOpMode == AppletOperationMode_Console);
+                int targetW = isConsole ? 1920 : 1280;
+                int targetH = isConsole ? 1080 : 720;
+
+                if (targetW != m_width || targetH != m_height) {
+                    if (m_initialized) {
+                        framebufferClose(&m_fb);
+                    }
+                    m_width  = targetW;
+                    m_height = targetH;
+                    m_scale  = isConsole ? 1.5f : 1.0f;
+
+                    NWindow* win = nwindowGetDefault();
+                    Result rc = framebufferCreate(&m_fb, win, m_width, m_height, PIXEL_FORMAT_RGBA_8888, 2);
+                    if (R_SUCCEEDED(rc)) {
+                        framebufferMakeLinear(&m_fb);
+                        m_initialized = true;
+                    }
+                }
+            }
+        }
 
     public:
+        Display() = default;
+
         bool init() {
+            m_lastOpMode = appletGetOperationMode();
+            bool isConsole = (m_lastOpMode == AppletOperationMode_Console);
+            m_width  = isConsole ? 1920 : 1280;
+            m_height = isConsole ? 1080 : 720;
+            m_scale  = isConsole ? 1.5f : 1.0f;
+
             NWindow* win = nwindowGetDefault();
-            Result rc = framebufferCreate(&m_fb, win, SCREEN_W, SCREEN_H, PIXEL_FORMAT_RGBA_8888, 2);
+            Result rc = framebufferCreate(&m_fb, win, m_width, m_height, PIXEL_FORMAT_RGBA_8888, 2);
             if (R_FAILED(rc)) return false;
 
             rc = framebufferMakeLinear(&m_fb);
@@ -72,10 +115,12 @@ namespace Gfx {
             }
 
             m_initialized = true;
+            m_font.init();
             return true;
         }
 
         void close() {
+            m_font.close();
             if (m_initialized) {
                 framebufferClose(&m_fb);
                 m_initialized = false;
@@ -84,6 +129,8 @@ namespace Gfx {
 
         bool beginFrame() {
             if (!m_initialized) return false;
+            checkAndUpdateResolution();
+
             m_currentBuf = static_cast<u32*>(framebufferBegin(&m_fb, &m_stride));
             return (m_currentBuf != nullptr);
         }
@@ -95,39 +142,46 @@ namespace Gfx {
             }
         }
 
+        inline int getWidth() const { return m_width; }
+        inline int getHeight() const { return m_height; }
+        inline float getScale() const { return m_scale; }
+        inline bool isDocked() const { return m_lastOpMode == AppletOperationMode_Console; }
+
+        inline int s(int v) const {
+            return static_cast<int>(std::round(v * m_scale));
+        }
+
         inline void drawPixel(int x, int y, u32 color) {
-            if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H && m_currentBuf) {
+            if (x >= 0 && x < m_width && y >= 0 && y < m_height && m_currentBuf) {
                 m_currentBuf[y * (m_stride / 4) + x] = color;
             }
         }
 
-        // Limpa a tela com gradiente vertical suave
         void clearScreenGradient(u32 topColor, u32 botColor) {
             if (!m_currentBuf) return;
 
             u8 tr = topColor & 0xFF, tg = (topColor >> 8) & 0xFF, tb = (topColor >> 16) & 0xFF;
             u8 br = botColor & 0xFF, bg = (botColor >> 8) & 0xFF, bb = (botColor >> 16) & 0xFF;
 
-            for (int y = 0; y < SCREEN_H; y++) {
-                float f = static_cast<float>(y) / SCREEN_H;
+            for (int y = 0; y < m_height; y++) {
+                float f = static_cast<float>(y) / m_height;
                 u8 r = static_cast<u8>(tr * (1.0f - f) + br * f);
                 u8 g = static_cast<u8>(tg * (1.0f - f) + bg * f);
                 u8 b = static_cast<u8>(tb * (1.0f - f) + bb * f);
                 u32 rowColor = RGBA(r, g, b);
 
                 u32* row = &m_currentBuf[y * (m_stride / 4)];
-                for (int x = 0; x < SCREEN_W; x++) {
+                for (int x = 0; x < m_width; x++) {
                     row[x] = rowColor;
                 }
             }
         }
 
-        // Retangulo Preenchido
         void fillRect(int x, int y, int w, int h, u32 color) {
             int x1 = std::max(0, x);
             int y1 = std::max(0, y);
-            int x2 = std::min(SCREEN_W, x + w);
-            int y2 = std::min(SCREEN_H, y + h);
+            int x2 = std::min(m_width, x + w);
+            int y2 = std::min(m_height, y + h);
 
             for (int cy = y1; cy < y2; cy++) {
                 u32* row = &m_currentBuf[cy * (m_stride / 4)];
@@ -137,41 +191,32 @@ namespace Gfx {
             }
         }
 
-        // Retangulo Arredondado
         void fillRoundedRect(int x, int y, int w, int h, int radius, u32 color) {
             if (radius <= 0) {
                 fillRect(x, y, w, h, color);
                 return;
             }
 
-            // Retangulo central vertical
             fillRect(x, y + radius, w, h - 2 * radius, color);
-            // Retangulo superior e inferior (sem os cantos)
             fillRect(x + radius, y, w - 2 * radius, radius, color);
             fillRect(x + radius, y + h - radius, w - 2 * radius, radius, color);
 
-            // 4 cantos em circulo
             int r2 = radius * radius;
             for (int cy = 0; cy < radius; cy++) {
                 for (int cx = 0; cx < radius; cx++) {
                     int dx = radius - cx;
                     int dy = radius - cy;
                     if (dx * dx + dy * dy <= r2) {
-                        // Top-Left
                         drawPixel(x + cx, y + cy, color);
-                        // Top-Right
                         drawPixel(x + w - 1 - cx, y + cy, color);
-                        // Bottom-Left
                         drawPixel(x + cx, y + h - 1 - cy, color);
-                        // Bottom-Right
                         drawPixel(x + w - 1 - cx, y + h - 1 - cy, color);
                     }
                 }
             }
         }
 
-        // Borda de Retangulo Arredondado
-        void drawRoundedRectOutline(int x, int y, int w, int h, int radius, u32 color, int thickness = 2) {
+        void drawRoundedRectOutline(int x, int y, int w, int h, int radius, u32 color, int thickness = 1) {
             for (int t = 0; t < thickness; t++) {
                 int curX = x + t;
                 int curY = y + t;
@@ -179,7 +224,6 @@ namespace Gfx {
                 int curH = h - 2 * t;
                 int curR = std::max(1, radius - t);
 
-                // Linhas horizontais e verticais
                 for (int lx = curX + curR; lx < curX + curW - curR; lx++) {
                     drawPixel(lx, curY, color);
                     drawPixel(lx, curY + curH - 1, color);
@@ -189,7 +233,6 @@ namespace Gfx {
                     drawPixel(curX + curW - 1, ly, color);
                 }
 
-                // Cantos
                 int r2 = curR * curR;
                 int innerR2 = std::max(0, curR - 1) * std::max(0, curR - 1);
                 for (int cy = 0; cy <= curR; cy++) {
@@ -208,7 +251,6 @@ namespace Gfx {
             }
         }
 
-        // Circulo Preenchido
         void fillCircle(int cx, int cy, int radius, u32 color) {
             int r2 = radius * radius;
             for (int y = -radius; y <= radius; y++) {
@@ -221,98 +263,74 @@ namespace Gfx {
             }
         }
 
-        // Renderizador de Caractere (Bitmap 8x16 com fator de escala 1x ou 2x)
-        void drawChar(int x, int y, char c, u32 color, int scale = 1) {
-            uint8_t code = static_cast<uint8_t>(c);
-            if (code < 32 || code > 127) code = 32;
-            int idx = code - 32;
-
-            const uint8_t* glyph = FONT_8X16[idx];
-            for (int row = 0; row < 16; row++) {
-                uint8_t bits = glyph[row];
-                for (int col = 0; col < 8; col++) {
-                    if (bits & (1 << (7 - col))) {
-                        if (scale == 1) {
-                            drawPixel(x + col, y + row, color);
-                        } else {
-                            for (int sy = 0; sy < scale; sy++) {
-                                for (int sx = 0; sx < scale; sx++) {
-                                    drawPixel(x + col * scale + sx, y + row * scale + sy, color);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        // Renderização de Texto Vetorial Oficial (pl:u Standard Font)
+        void drawText(int x, int y, const std::string& text, u32 color, int pixelHeight = 16) {
+            if (!m_currentBuf) return;
+            m_font.renderText(m_currentBuf, m_stride / 4, m_width, m_height, x, y, text, color, pixelHeight);
         }
 
-        // Renderizador de Texto com Suporte a Sombra Opcional
-        void drawText(int x, int y, const std::string& text, u32 color, int scale = 1, bool shadow = false) {
-            if (shadow) {
-                u32 shadowColor = RGBA(0, 0, 0, 160);
-                drawText(x + scale, y + scale, text, shadowColor, scale, false);
-            }
+        float measureText(const std::string& text, int pixelHeight = 16) {
+            return m_font.measureTextWidth(text, pixelHeight);
+        }
 
-            int curX = x;
-            int charW = 8 * scale;
-            for (char c : text) {
-                if (c == '\n') {
-                    curX = x;
-                    y += 18 * scale;
-                    continue;
-                }
-                drawChar(curX, y, c, color, scale);
-                curX += charW;
-            }
+        // Badges Oficiais do Controle Nintendo Switch
+        void drawControllerButtonBadge(int x, int y, const char* label, u32 btnColor, int radius = 11) {
+            fillCircle(x + radius, y + radius, radius, btnColor);
+            drawRoundedRectOutline(x, y, radius * 2, radius * 2, radius, RGBA(255, 255, 255, 180), 1);
+
+            int fontH = static_cast<int>(radius * 1.3f);
+            float tw = measureText(label, fontH);
+            int tx = x + radius - static_cast<int>(tw * 0.5f);
+            int ty = y + radius - static_cast<int>(fontH * 0.5f);
+            drawText(tx, ty, label, Colors::TEXT_WHITE, fontH);
+        }
+
+        void drawPillButtonBadge(int x, int y, const char* label, int w = 24, int h = 18) {
+            fillRoundedRect(x, y, w, h, 5, Colors::JOYCON_GRAY);
+            int fontH = 13;
+            float tw = measureText(label, fontH);
+            int tx = x + (w - static_cast<int>(tw)) / 2;
+            int ty = y + (h - fontH) / 2 - 1;
+            drawText(tx, ty, label, Colors::TEXT_WHITE, fontH);
         }
 
         // ======================================================================
-        // ICONES VETORIAIS PROCEDURAIS (SEM DEPENDENCIAS DE ARQUIVOS)
+        // ICONES VETORIAIS PROCEDURAIS REFINADOS
         // ======================================================================
 
-        // Icone Oficial do Google Drive (Triangulo Isoceles com 3 cores)
         void drawGoogleDriveIcon(int cx, int cy, int size) {
             int half = size / 2;
-            // Trapezio Amarelo (Topo-Direita)
+            int w = static_cast<int>(size * 0.35f);
             for (int dy = -half; dy <= 0; dy++) {
-                int width = static_cast<int>(size * 0.35f);
                 int sx = cx + (-dy / 2);
-                fillRect(sx, cy + dy, width, 2, Colors::DRIVE_YELLOW);
+                fillRect(sx, cy + dy, w, 2, Colors::DRIVE_YELLOW);
             }
-            // Trapezio Verde (Base)
             for (int dy = 0; dy <= half; dy++) {
-                int width = static_cast<int>(size * 0.35f);
                 int sx = cx + (dy / 2);
-                fillRect(sx, cy + dy, width, 2, Colors::DRIVE_GREEN);
+                fillRect(sx, cy + dy, w, 2, Colors::DRIVE_GREEN);
             }
-            // Trapezio Azul (Esquerda)
+            int h = static_cast<int>(size * 0.40f);
             for (int dx = -half; dx <= 0; dx++) {
-                int height = static_cast<int>(size * 0.40f);
                 int sy = cy + (-dx / 2);
-                fillRect(cx + dx, sy, 2, height, Colors::DRIVE_BLUE);
+                fillRect(cx + dx, sy, 2, h, Colors::DRIVE_BLUE);
             }
         }
 
-        // Icone de Nuvem com Seta de Upload
-        void drawCloudSaveIcon(int cx, int cy, int size, u32 color) {
+        void drawCloudUploadIcon(int cx, int cy, int size, u32 color) {
             int r = size / 4;
-            // Corpos da nuvem
             fillCircle(cx - r, cy, r, color);
             fillCircle(cx, cy - r / 2, static_cast<int>(r * 1.3f), color);
             fillCircle(cx + r, cy, r, color);
             fillRect(cx - r, cy, r * 2, r, color);
 
-            // Seta de upload no centro da nuvem
             u32 arrowColor = Colors::TEXT_DARK;
-            int arrowH = size / 3;
-            fillRect(cx - 2, cy - arrowH / 4, 4, arrowH, arrowColor);
-            // Ponta da seta
+            int ah = size / 3;
+            fillRect(cx - 2, cy - ah / 4, 4, ah, arrowColor);
             for (int i = 0; i < 6; i++) {
-                fillRect(cx - i, cy - arrowH / 4 + i, i * 2 + 1, 1, arrowColor);
+                fillRect(cx - i, cy - ah / 4 + i, i * 2 + 1, 1, arrowColor);
             }
         }
 
-        // Icone de Nuvem com Seta de Download
         void drawCloudDownloadIcon(int cx, int cy, int size, u32 color) {
             int r = size / 4;
             fillCircle(cx - r, cy, r, color);
@@ -321,55 +339,26 @@ namespace Gfx {
             fillRect(cx - r, cy, r * 2, r, color);
 
             u32 arrowColor = Colors::TEXT_DARK;
-            int arrowH = size / 3;
-            int topY = cy - arrowH / 3;
-            int tipY = topY + arrowH;
-            fillRect(cx - 2, topY, 4, arrowH - 4, arrowColor);
-            // Ponta da seta apontando para baixo
+            int ah = size / 3;
+            int topY = cy - ah / 3;
+            int tipY = topY + ah;
+            fillRect(cx - 2, topY, 4, ah - 4, arrowColor);
             for (int i = 0; i < 6; i++) {
                 fillRect(cx - (5 - i), tipY - 5 + i, (5 - i) * 2 + 1, 1, arrowColor);
             }
         }
 
-        // Icone de Power / Execucao
-        void drawPowerIcon(int cx, int cy, int size, u32 color) {
-            int r = size / 2;
-            int rIn = r - 3;
-            for (float a = 0.8f; a <= 5.48f; a += 0.05f) {
-                for (int cr = rIn; cr <= r; cr++) {
-                    int px = cx + static_cast<int>(std::cos(a) * cr);
-                    int py = cy + static_cast<int>(std::sin(a) * cr);
-                    drawPixel(px, py, color);
-                }
-            }
-            fillRect(cx - 1, cy - r, 3, r + 1, color);
-        }
-
-        // Icone de Bandeira (Boot Flag)
-        void drawFlagIcon(int cx, int cy, int size, u32 color) {
-            int h = size;
-            int w = size * 3 / 4;
-            int x = cx - w / 2;
-            int y = cy - h / 2;
-            fillRect(x, y, 2, h, Colors::TEXT_MUTED);
-            for (int dy = 0; dy < h / 2; dy++) {
-                int fw = std::max(2, (w - 2) - dy / 2);
-                fillRect(x + 2, y + dy, fw, 1, color);
-            }
-        }
-
-        // Icone de Gamepad / Jogos
         void drawGamepadIcon(int cx, int cy, int size, u32 color) {
             int w = size;
             int h = size * 2 / 3;
             int x = cx - w / 2;
             int y = cy - h / 2;
             fillRoundedRect(x, y, w, h, 6, color);
-            // D-Pad esquerda
+
             int dX = x + 7, dY = cy - 2;
             fillRect(dX - 3, dY, 7, 3, Colors::TEXT_DARK);
             fillRect(dX - 1, dY - 2, 3, 7, Colors::TEXT_DARK);
-            // Botoes direita
+
             int bX = x + w - 8, bY = cy - 1;
             fillCircle(bX, bY - 3, 1, Colors::JOYCON_YELLOW);
             fillCircle(bX, bY + 3, 1, Colors::STATUS_GREEN);
@@ -377,34 +366,37 @@ namespace Gfx {
             fillCircle(bX + 3, bY, 1, Colors::JOYCON_RED);
         }
 
-        // Icone de Chave (API Key / Client ID)
+        void drawFolderIcon(int x, int y, int w, int h, u32 color) {
+            fillRoundedRect(x, y, w / 2, h / 3, 3, color);
+            fillRoundedRect(x, y + h / 4, w, h * 3 / 4, 4, color);
+        }
+
         void drawKeyIcon(int cx, int cy, int size, u32 color) {
             int r = size / 3;
             int ringX = cx - size / 4;
-            int ringY = cy;
-            fillCircle(ringX, ringY, r, color);
-            fillCircle(ringX, ringY, r / 2, Colors::CARD_BG);
+            fillCircle(ringX, cy, r, color);
+            fillCircle(ringX, cy, r / 2, Colors::CARD_BG);
             int stemW = size / 2;
             fillRect(ringX + r - 1, cy - 2, stemW, 4, color);
             fillRect(ringX + r + stemW - 4, cy + 2, 3, 4, color);
             fillRect(ringX + r + stemW - 10, cy + 2, 3, 3, color);
         }
 
-        // Icone de Edicao / Lapis
-        void drawEditIcon(int cx, int cy, int size, u32 color) {
-            int half = size / 2;
-            for (int d = -half + 3; d <= half - 3; d++) {
-                fillRect(cx + d - 1, cy - d - 1, 3, 3, color);
-            }
-            drawPixel(cx - half + 1, cy + half - 1, Colors::JOYCON_YELLOW);
-            drawPixel(cx + half - 1, cy - half + 1, Colors::JOYCON_RED);
+        void drawGearIcon(int cx, int cy, int size, u32 color) {
+            int r = size / 2;
+            int innerR = size / 4;
+            fillCircle(cx, cy, r, color);
+            fillCircle(cx, cy, innerR, Colors::CARD_BG);
+            // Dentes da engrenagem
+            int tw = 4, th = 3;
+            fillRect(cx - tw / 2, cy - r - th + 1, tw, th, color);
+            fillRect(cx - tw / 2, cy + r - 1, tw, th, color);
+            fillRect(cx - r - th + 1, cy - tw / 2, th, tw, color);
+            fillRect(cx + r - 1, cy - tw / 2, th, tw, color);
         }
 
-        // Icone de Sinal Wi-Fi
         void drawWifiIcon(int cx, int cy, int size, u32 color) {
-            // Ponto base
             fillCircle(cx, cy + size / 2 - 2, 3, color);
-            // Arcos de sinal
             for (int r = size / 3; r <= size / 2; r += size / 6) {
                 for (float a = 3.9f; a <= 5.5f; a += 0.05f) {
                     int px = cx + static_cast<int>(std::cos(a) * r);
@@ -413,45 +405,6 @@ namespace Gfx {
                 }
             }
         }
-
-        // Icone de Pasta (Folder)
-        void drawFolderIcon(int x, int y, int w, int h, u32 color) {
-            // Aba da pasta
-            fillRoundedRect(x, y, w / 2, h / 3, 3, color);
-            // Corpo principal da pasta
-            fillRoundedRect(x, y + h / 4, w, h * 3 / 4, 4, color);
-        }
-
-        // Icone de Cadeado / Seguranca
-        void drawLockIcon(int cx, int cy, int size, u32 color) {
-            // Arco superior
-            for (int r = size / 4; r <= size / 3; r++) {
-                for (float a = 3.14f; a <= 6.28f; a += 0.08f) {
-                    int px = cx + static_cast<int>(std::cos(a) * r);
-                    int py = cy - size / 6 + static_cast<int>(std::sin(a) * r);
-                    drawPixel(px, py, color);
-                }
-            }
-            // Corpo do cadeado
-            fillRoundedRect(cx - size / 3, cy - size / 6, size * 2 / 3, size / 2, 3, color);
-            // Buraco da fechadura
-            fillCircle(cx, cy + 2, 2, Colors::TEXT_DARK);
-        }
-
-        // Badge de Botao do Controle do Nintendo Switch: (A), (B), (X), (Y)
-        void drawControllerButtonBadge(int x, int y, const char* label, u32 btnColor) {
-            int radius = 11;
-            fillCircle(x + radius, y + radius, radius, btnColor);
-            drawRoundedRectOutline(x, y, radius * 2, radius * 2, radius, RGBA(255, 255, 255, 180), 1);
-            // Letra central
-            drawChar(x + radius - 4, y + radius - 8, label[0], Colors::TEXT_WHITE, 1);
-        }
-
-        // Badge Pílula de Tecla: (+), (-)
-        void drawPillButtonBadge(int x, int y, const char* label) {
-            fillRoundedRect(x, y, 22, 18, 5, Colors::JOYCON_GRAY);
-            drawText(x + 7, y + 1, label, Colors::TEXT_WHITE, 1);
-        }
     };
-}
 
+} // namespace Gfx

@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nintendo Switch - Google Drive Sync v0.1.0 (Simulador Nativo)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background: #090b10;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .header-title {
+            text-align: center;
+            margin-bottom: 14px;
+        }
+
+        .header-title h1 {
+            font-size: 19px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: #00d2ff;
+        }
+
+        .header-title p {
+            font-size: 13px;
+            color: #8794aa;
+            margin-top: 3px;
+        }
+
+        /* Moldura estilo Nintendo Switch Console */
+        .switch-console {
+            display: flex;
+            align-items: center;
+            background: #11141d;
+            padding: 14px;
+            border-radius: 40px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 0 2px #262e40;
+            position: relative;
+        }
+
+        /* Joy-Con Esquerdo (Ciano) */
+        .joycon-left {
+            width: 76px;
+            height: 480px;
+            background: linear-gradient(180deg, #00d2ff 0%, #0099cc 100%);
+            border-top-left-radius: 56px;
+            border-bottom-left-radius: 56px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-around;
+            padding: 26px 0;
+            box-shadow: inset -4px 0 10px rgba(0,0,0,0.3);
+        }
+
+        /* Joy-Con Direito (Vermelho Neon) */
+        .joycon-right {
+            width: 76px;
+            height: 480px;
+            background: linear-gradient(180deg, #ff3c56 0%, #d61a35 100%);
+            border-top-right-radius: 56px;
+            border-bottom-right-radius: 56px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-around;
+            padding: 26px 0;
+            box-shadow: inset 4px 0 10px rgba(0,0,0,0.3);
+        }
+
+        .stick {
+            width: 42px;
+            height: 42px;
+            background: #1c2230;
+            border: 3px solid #2e384d;
+            border-radius: 50%;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            cursor: pointer;
+        }
+
+        .btn-dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 20px);
+            grid-template-rows: repeat(3, 20px);
+            gap: 2px;
+        }
+
+        .dpad-btn, .face-btn {
+            background: #1a1e28;
+            color: #fff;
+            border: 1px solid #364259;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, background 0.1s;
+        }
+
+        .dpad-btn:active, .face-btn:active, .pill-btn:active {
+            transform: scale(0.9);
+            background: #3b4866;
+        }
+
+        .face-cluster {
+            display: grid;
+            grid-template-columns: repeat(3, 22px);
+            grid-template-rows: repeat(3, 22px);
+            gap: 3px;
+        }
+
+        .pill-btn {
+            background: #1a1e28;
+            border: 1px solid #364259;
+            color: #fff;
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* Tela Central */
+        .screen-container {
+            width: 854px;
+            height: 480px;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.8);
+            margin: 0 10px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Guia de Atalhos */
+        .keyboard-hints {
+            margin-top: 14px;
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: center;
+            font-size: 12px;
+            color: #8794aa;
+        }
+
+        .hint-badge {
+            background: #181d29;
+            border: 1px solid #262e40;
+            padding: 4px 10px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .hint-badge kbd {
+            background: #262e40;
+            color: #00d2ff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-title">
+        <h1>SIMULADOR NATIVO - GOOGLE DRIVE SYNC v0.1.0</h1>
+        <p>Interface Gráfica Refatorada (Padrão Oficial Nintendo Switch Horizon OS)</p>
+    </div>
+
+    <div class="switch-console">
+        <!-- Joy-Con Esquerdo -->
+        <div class="joycon-left">
+            <button class="pill-btn" onclick="triggerKey('Minus')">-</button>
+            <div class="stick" onclick="triggerKey('ArrowUp')"></div>
+            <div class="btn-dpad">
+                <div></div>
+                <button class="dpad-btn" onclick="triggerKey('ArrowUp')">▲</button>
+                <div></div>
+                <button class="dpad-btn" onclick="triggerKey('ArrowLeft')">◀</button>
+                <div></div>
+                <button class="dpad-btn" onclick="triggerKey('ArrowRight')">▶</button>
+                <div></div>
+                <button class="dpad-btn" onclick="triggerKey('ArrowDown')">▼</button>
+                <div></div>
+            </div>
+            <button class="pill-btn" style="border-radius: 50%; width: 20px; height: 20px; padding: 0;" title="Captura">●</button>
+        </div>
+
+        <!-- Tela Principal -->
+        <div class="screen-container">
+            <canvas id="switchScreen" width="1280" height="720"></canvas>
+        </div>
+
+        <!-- Joy-Con Direito -->
+        <div class="joycon-right">
+            <button class="pill-btn" onclick="triggerKey('Plus')">+</button>
+            <div class="face-cluster">
+                <div></div>
+                <button class="face-btn" onclick="triggerKey('KeyX')">X</button>
+                <div></div>
+                <button class="face-btn" onclick="triggerKey('KeyY')">Y</button>
+                <div></div>
+                <button class="face-btn" onclick="triggerKey('KeyA')">A</button>
+                <div></div>
+                <button class="face-btn" onclick="triggerKey('KeyB')">B</button>
+                <div></div>
+            </div>
+            <div class="stick" onclick="triggerKey('KeyA')"></div>
+            <button class="pill-btn" style="border-radius: 50%; width: 22px; height: 22px; padding: 0;" title="Home">⌂</button>
+        </div>
+    </div>
+
+    <!-- Legenda de Atalhos -->
+    <div class="keyboard-hints">
+        <div class="hint-badge"><kbd>▲</kbd> <kbd>▼</kbd> Navegar</div>
+        <div class="hint-badge"><kbd>Enter</kbd> ou <kbd>Z</kbd> (A) Confirmar / Marcar</div>
+        <div class="hint-badge"><kbd>Esc</kbd> ou <kbd>X</kbd> (B) Voltar / Sair</div>
+        <div class="hint-badge"><kbd>-</kbd> ou <kbd>Y</kbd> Configuracoes</div>
+        <div class="hint-badge"><kbd>C</kbd> ou <kbd>Espaço</kbd> (Y) Todos/Nenhum</div>
+        <div class="hint-badge"><kbd>Shift</kbd> (X) Salvar Favoritos</div>
+        <div class="hint-badge"><kbd>+</kbd> Iniciar Backup / Fechar App</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('switchScreen');
+        const ctx = canvas.getContext('2d');
+
+        // Máquina de Estados
+        let currentScreen = 'MAIN'; // 'MAIN', 'SETTINGS', 'MANAGE_GAMES', 'DEVICE_AUTH', 'SUMMARY'
+        let mainSelectedIndex = 0;
+        let settingsSelectedIndex = 0;
+        let gamesSelectedIndex = 0;
+        let gamesScrollOffset = 0;
+
+        let toastMessage = "";
+        let toastColor = "#2ecc71";
+        let toastTimer = null;
+
+        function showToast(msg, color = "#2ecc71") {
+            toastMessage = msg;
+            toastColor = color;
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toastMessage = ""; }, 3000);
+        }
+
+        // Jogos no console
+        const games = [
+            { name: "The Legend of Zelda: Tears of the Kingdom", tid: "0x0100F2C0115B6000", size: "48.20 MB", selected: true, favorite: true },
+            { name: "Super Mario Odyssey",                        tid: "0x0100000000010000", size: "12.45 MB", selected: true, favorite: true },
+            { name: "Pokemon Legends: Arceus",                   tid: "0x01001F5010DFA000", size: "18.30 MB", selected: false, favorite: false },
+            { name: "Metroid Prime Remastered",                  tid: "0x010012101468C000", size: "6.75 MB",  selected: true, favorite: true },
+            { name: "Animal Crossing: New Horizons",             tid: "0x01006F8002326000", size: "32.10 MB", selected: false, favorite: false },
+        ];
+
+        // 4 Ações Principais
+        const mainActions = [
+            { title: "Backup Completo",    sub: "Envia todos os saves do perfil ativo para o Google Drive", color: "#00d2ff", type: "upload" },
+            { title: "Restaurar da Nuvem", sub: "Atualiza saves locais que estejam mais recentes na nuvem", color: "#2ecc71", type: "download" },
+            { title: "Gerenciar por Jogo", sub: "Visualizar historico, selecionar titulos e definir favoritos", color: "#2878ff", type: "gamepad" },
+            { title: "Vincular Conta Google", sub: "Autenticar via codigo na tela em google.com/device", color: "#ffba00", type: "google" }
+        ];
+
+        // Configurações
+        const settingsItems = [
+            { title: "Pasta de Destino no Google Drive", desc: "Diretorio raiz onde os backups sao armazenados no Drive", val: "Switch Saves" },
+            { title: "Google OAuth Client ID",           desc: "Identificador da aplicacao registrado no Google Cloud Console", val: "[Configurado]" },
+            { title: "Google OAuth Client Secret",       desc: "Chave de autenticacao privada do OAuth 2.0", val: "[••••••••••••]" },
+            { title: "Testar Conexao com o Drive",       desc: "Valida certificados SSL e permissoes de escrita na pasta", val: "Pressione A para testar" }
+        ];
+
+        // Helpers de Desenho
+        function fillRoundedRect(x, y, w, h, r, color) {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, r);
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        function strokeRoundedRect(x, y, w, h, r, color, lw = 1) {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, r);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lw;
+            ctx.stroke();
+        }
+
+        function drawText(x, y, text, color, size = 16, bold = false) {
+            ctx.font = `${bold ? '600 ' : '400 '}${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y + size);
+        }
+
+        function drawBtnBadge(x, y, label, color) {
+            ctx.beginPath();
+            ctx.arc(x + 11, y + 11, 11, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255,255,255,0.7)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.font = "bold 13px monospace";
+            ctx.fillStyle = "#fff";
+            ctx.fillText(label, x + 7, y + 15);
+        }
+
+        function drawPillBadge(x, y, label) {
+            fillRoundedRect(x, y, 22, 18, 5, "#555c6c");
+            ctx.font = "bold 14px monospace";
+            ctx.fillStyle = "#fff";
+            ctx.fillText(label, x + 7, y + 14);
+        }
+
+        function drawCloudIcon(cx, cy, size, color, isUpload = true) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(cx - 7, cy, 7, 0, Math.PI * 2);
+            ctx.arc(cx, cy - 4, 10, 0, Math.PI * 2);
+            ctx.arc(cx + 7, cy, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(cx - 7, cy, 14, 8);
+
+            ctx.fillStyle = "#12151e";
+            if (isUpload) {
+                ctx.fillRect(cx - 2, cy - 2, 4, 8);
+                ctx.beginPath();
+                ctx.moveTo(cx - 6, cy);
+                ctx.lineTo(cx, cy - 6);
+                ctx.lineTo(cx + 6, cy);
+                ctx.fill();
+            } else {
+                ctx.fillRect(cx - 2, cy - 6, 4, 8);
+                ctx.beginPath();
+                ctx.moveTo(cx - 6, cy);
+                ctx.lineTo(cx, cy + 6);
+                ctx.lineTo(cx + 6, cy);
+                ctx.fill();
+            }
+        }
+
+        function drawGoogleIcon(cx, cy, size) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            const s = size / 24;
+            ctx.scale(s, s);
+            ctx.fillStyle = "#ffba00";
+            ctx.beginPath();
+            ctx.moveTo(0, -10); ctx.lineTo(7, 2); ctx.lineTo(2, 2); ctx.lineTo(-5, -10);
+            ctx.fill();
+            ctx.fillStyle = "#00ac47";
+            ctx.beginPath();
+            ctx.moveTo(-10, 8); ctx.lineTo(10, 8); ctx.lineTo(6, 2); ctx.lineTo(-6, 2);
+            ctx.fill();
+            ctx.fillStyle = "#0066da";
+            ctx.beginPath();
+            ctx.moveTo(-10, 8); ctx.lineTo(-5, -10); ctx.lineTo(0, -10); ctx.lineTo(-5, 0);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawGamepadIcon(cx, cy, size, color) {
+            const w = size, h = size * 2 / 3;
+            fillRoundedRect(cx - w / 2, cy - h / 2, w, h, 6, color);
+            ctx.fillStyle = "#12151e";
+            ctx.fillRect(cx - w / 2 + 5, cy - 2, 6, 3);
+            ctx.fillRect(cx - w / 2 + 7, cy - 4, 2, 7);
+            ctx.fillStyle = "#ffcd00";
+            ctx.beginPath(); ctx.arc(cx + w / 2 - 8, cy - 3, 2, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#2ecc71";
+            ctx.beginPath(); ctx.arc(cx + w / 2 - 8, cy + 3, 2, 0, Math.PI * 2); ctx.fill();
+        }
+
+        function renderHeader() {
+            ctx.fillStyle = "#0d0f14";
+            ctx.fillRect(0, 0, 1280, 70);
+            ctx.fillStyle = "#262e40";
+            ctx.fillRect(0, 69, 1280, 1);
+
+            fillRoundedRect(24, 20, 5, 30, 3, "#00d2ff");
+            drawText(38, 16, "Google Drive Sync", "#ffffff", 20, true);
+            drawText(40, 42, "v0.1.0  •  Nintendo Switch Cloud Backup", "#8794aa", 13);
+
+            // Online
+            ctx.fillStyle = "#2ecc71";
+            ctx.beginPath(); ctx.arc(1040, 35, 5, 0, Math.PI * 2); ctx.fill();
+            drawText(1054, 25, "Online", "#ffffff", 15, true);
+
+            // Dock / Portátil
+            fillRoundedRect(1150, 24, 95, 24, 6, "#12161f");
+            strokeRoundedRect(1150, 24, 95, 24, 6, "#262e40", 1);
+            drawText(1160, 27, "720p Portatil", "#00d2ff", 11, true);
+        }
+
+        function renderFooter(items) {
+            ctx.fillStyle = "#0d0f14";
+            ctx.fillRect(0, 660, 1280, 60);
+            ctx.fillStyle = "#262e40";
+            ctx.fillRect(0, 660, 1280, 1);
+
+            let bx = 30;
+            const by = 678;
+            items.forEach(it => {
+                if (it.btn) {
+                    drawBtnBadge(bx, by, it.btn, it.color);
+                    drawText(bx + 28, by, it.label, "#ffffff", 15);
+                    bx += 30 + ctx.measureText(it.label).width + 30;
+                } else if (it.pill) {
+                    drawPillBadge(bx, by, it.pill);
+                    drawText(bx + 30, by, it.label, "#ffffff", 15);
+                    bx += 30 + ctx.measureText(it.label).width + 30;
+                }
+            });
+        }
+
+        function renderToast() {
+            if (!toastMessage) return;
+            const tw = 580, th = 42;
+            const tx = (1280 - tw) / 2, ty = 605;
+            fillRoundedRect(tx, ty, tw, th, 8, "#181d29");
+            strokeRoundedRect(tx, ty, tw, th, 8, toastColor, 1);
+            ctx.fillStyle = toastColor;
+            ctx.beginPath(); ctx.arc(tx + 24, ty + th / 2, 5, 0, Math.PI * 2); ctx.fill();
+            drawText(tx + 40, ty + 12, toastMessage, "#ffffff", 15, true);
+        }
+
+        function renderMainScreen() {
+            // Fundo
+            const grad = ctx.createLinearGradient(0, 0, 0, 720);
+            grad.addColorStop(0, '#0f1117'); grad.addColorStop(1, '#151924');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, 1280, 720);
+
+            renderHeader();
+
+            // Painel Esquerdo: Status Real
+            const lx = 30, ly = 90, lw = 380, lh = 540;
+            fillRoundedRect(lx, ly, lw, lh, 14, "#181d29");
+            strokeRoundedRect(lx, ly, lw, lh, 14, "#262e40", 1);
+
+            const px = lx + 26;
+            let ry = ly + 24;
+            drawText(px, ry, "STATUS DO SISTEMA", "#8794aa", 13, true);
+            ry += 26;
+            ctx.fillStyle = "#262e40"; ctx.fillRect(lx + 20, ry, lw - 40, 1);
+
+            ry += 22;
+            drawText(px, ry, "Perfil Local:", "#8794aa", 14);
+            ry += 20;
+            drawText(px, ry, "Lucas (Switch)", "#ffffff", 16, true);
+
+            ry += 36;
+            drawText(px, ry, "Conta Google Drive:", "#8794aa", 14);
+            ry += 20;
+            drawText(px, ry, "Conectada (OAuth 2.0)", "#2ecc71", 16, true);
+
+            ry += 36;
+            drawText(px, ry, "Pasta de Destino:", "#8794aa", 14);
+            ry += 20;
+            drawText(px, ry, "/Switch Saves", "#00d2ff", 16, true);
+
+            ry += 36;
+            drawText(px, ry, "Ultimo Backup:", "#8794aa", 14);
+            ry += 20;
+            drawText(px, ry, "Hoje, 09:42 UTC", "#ebf0fa", 15);
+
+            ry += 36;
+            drawText(px, ry, "Jogos com Save:", "#8794aa", 14);
+            ry += 20;
+            drawText(px, ry, `${games.length} titulos detectados`, "#ffffff", 15);
+
+            ry += 36;
+            drawText(px, ry, "Integridade:", "#8794aa", 14);
+            ry += 20;
+            drawText(px, ry, "Checksum CRC32 & RTC", "#8794aa", 14);
+
+            drawText(px, ly + lh - 40, "[-] Configuracoes avancadas", "#8794aa", 12);
+
+            // Painel Direito: 4 Ações
+            const rx = lx + lw + 24;
+            const rw = 1280 - rx - 30;
+            const ch = 118, cgap = 18;
+            const sy = ly + 6;
+
+            mainActions.forEach((act, idx) => {
+                const cy = sy + idx * (ch + cgap);
+                const isSel = (idx === mainSelectedIndex);
+
+                if (isSel) {
+                    fillRoundedRect(rx, cy, rw, ch, 12, "#202a40");
+                    strokeRoundedRect(rx, cy, rw, ch, 12, "#00d2ff", 2);
+                    fillRoundedRect(rx + 6, cy + 10, 4, ch - 20, 2, "#00d2ff");
+                } else {
+                    fillRoundedRect(rx, cy, rw, ch, 12, "#181d29");
+                    strokeRoundedRect(rx, cy, rw, ch, 12, "#262e40", 1);
+                }
+
+                const icx = rx + 48, icy = cy + ch / 2;
+                ctx.beginPath(); ctx.arc(icx, icy, 24, 0, Math.PI * 2);
+                ctx.fillStyle = isSel ? "#0d0f14" : "#12161f"; ctx.fill();
+                ctx.strokeStyle = act.color; ctx.lineWidth = 1; ctx.stroke();
+
+                if (act.type === 'upload') drawCloudIcon(icx, icy, 26, act.color, true);
+                else if (act.type === 'download') drawCloudIcon(icx, icy, 26, act.color, false);
+                else if (act.type === 'gamepad') drawGamepadIcon(icx, icy, 26, act.color);
+                else if (act.type === 'google') drawGoogleIcon(icx, icy, 24);
+
+                const tx = rx + 92;
+                drawText(tx, cy + 28, act.title, "#ffffff", 19, true);
+                drawText(tx, cy + 62, act.sub, isSel ? "#00d2ff" : "#8794aa", 14);
+
+                if (isSel) {
+                    drawText(rx + rw - 34, cy + 44, ">", "#00d2ff", 20, true);
+                }
+            });
+
+            renderToast();
+
+            renderFooter([
+                { btn: "A", label: "Confirmar", color: "#ff3c56" },
+                { btn: "B", label: "Sair", color: "#555c6c" },
+                { pill: "-", label: "Configuracoes" },
+                { pill: "+", label: "Fechar App" }
+            ]);
+        }
+
+        function renderSettingsScreen() {
+            const grad = ctx.createLinearGradient(0, 0, 0, 720);
+            grad.addColorStop(0, '#0f1117'); grad.addColorStop(1, '#151924');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, 1280, 720);
+
+            renderHeader();
+
+            const cx = 60, cw = 1160;
+            let sy = 100;
+            drawText(cx, sy, "CONFIGURACOES DO SISTEMA", "#8794aa", 14, true);
+            sy += 28;
+
+            const itemH = 105, itemGap = 14;
+
+            settingsItems.forEach((item, idx) => {
+                const iy = sy + idx * (itemH + itemGap);
+                const isSel = (idx === settingsSelectedIndex);
+
+                if (isSel) {
+                    fillRoundedRect(cx, iy, cw, itemH, 12, "#202a40");
+                    strokeRoundedRect(cx, iy, cw, itemH, 12, "#00d2ff", 2);
+                    fillRoundedRect(cx + 6, iy + 10, 4, itemH - 20, 2, "#00d2ff");
+                } else {
+                    fillRoundedRect(cx, iy, cw, itemH, 12, "#181d29");
+                    strokeRoundedRect(cx, iy, cw, itemH, 12, "#262e40", 1);
+                }
+
+                const tx = cx + 32;
+                drawText(tx, iy + 20, item.title, "#ffffff", 18, true);
+                drawText(tx, iy + 48, item.desc, "#8794aa", 14);
+                drawText(tx, iy + 74, `Valor atual: ${item.val}`, "#00d2ff", 13);
+            });
+
+            renderToast();
+
+            renderFooter([
+                { btn: "A", label: "Editar / Executar", color: "#ff3c56" },
+                { btn: "B", label: "Voltar", color: "#555c6c" }
+            ]);
+        }
+
+        function renderManageGamesScreen() {
+            const grad = ctx.createLinearGradient(0, 0, 0, 720);
+            grad.addColorStop(0, '#0f1117'); grad.addColorStop(1, '#151924');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, 1280, 720);
+
+            renderHeader();
+
+            const lx = 40, ly = 90, lw = 1200, lh = 550;
+            fillRoundedRect(lx, ly, lw, lh, 14, "#181d29");
+            strokeRoundedRect(lx, ly, lw, lh, 14, "#262e40", 1);
+
+            const cardX = lx + 16, cardW = lw - 32;
+            let itemY = ly + 16, itemH = 72;
+
+            games.forEach((game, idx) => {
+                const isFocused = (idx === gamesSelectedIndex);
+
+                if (isFocused) {
+                    fillRoundedRect(cardX, itemY, cardW, itemH, 10, "#202a40");
+                    strokeRoundedRect(cardX, itemY, cardW, itemH, 10, "#00d2ff", 2);
+                    fillRoundedRect(cardX + 4, itemY + 8, 4, itemH - 16, 2, "#00d2ff");
+                } else {
+                    fillRoundedRect(cardX, itemY, cardW, itemH, 10, "#12161f");
+                    strokeRoundedRect(cardX, itemY, cardW, itemH, 10, "#262e40", 1);
+                }
+
+                // Checkbox
+                const chkX = cardX + 16, chkY = itemY + 22, chkW = 30, chkH = 30;
+                if (game.selected) {
+                    fillRoundedRect(chkX, chkY, chkW, chkH, 6, "#2ecc71");
+                    drawText(chkX + 8, chkY + 4, "X", "#ffffff", 18, true);
+                } else {
+                    fillRoundedRect(chkX, chkY, chkW, chkH, 6, "#181d29");
+                    strokeRoundedRect(chkX, chkY, chkW, chkH, 6, "#8794aa", 2);
+                }
+
+                // Miniatura do Ícone Oficial do Jogo
+                const iconSize = 56;
+                const iconX = chkX + chkW + 16;
+                const iconY = itemY + (itemH - iconSize) / 2;
+
+                const bgColors = ["#164132", "#b41e28", "#234b82", "#1e192d", "#285032"];
+                fillRoundedRect(iconX, iconY, iconSize, iconSize, 8, bgColors[idx % bgColors.length]);
+                strokeRoundedRect(iconX, iconY, iconSize, iconSize, 8, "#262e40", 1);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 20px sans-serif";
+                ctx.fillText(game.name.charAt(0), iconX + 20, iconY + 36);
+
+                const tx = iconX + iconSize + 18;
+                drawText(tx, itemY + 14, game.name, "#ffffff", 18, true);
+                drawText(tx, itemY + 42, `Title ID: ${game.tid}   •   Tamanho: ${game.size}`, isFocused ? "#00d2ff" : "#8794aa", 14);
+
+                if (game.favorite) {
+                    const favX = cardX + cardW - 120;
+                    fillRoundedRect(favX, itemY + 22, 96, 26, 6, "#181d29");
+                    strokeRoundedRect(favX, itemY + 22, 96, 26, 6, "#ffcd00", 1);
+                    drawText(favX + 14, itemY + 26, "FAVORITO", "#ffcd00", 12, true);
+                }
+
+                itemY += itemH + 12;
+            });
+
+            renderToast();
+
+            renderFooter([
+                { btn: "A", label: "Alternar", color: "#ff3c56" },
+                { btn: "Y", label: "Todos/Nenhum", color: "#ffcd00" },
+                { btn: "X", label: "Salvar Favoritos", color: "#2878ff" },
+                { pill: "+", label: "Iniciar Backup" },
+                { btn: "B", label: "Voltar", color: "#555c6c" }
+            ]);
+        }
+
+        function renderOAuthModal() {
+            renderMainScreen();
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+            ctx.fillRect(0, 0, 1280, 720);
+
+            const mw = 740, mh = 460;
+            const mx = (1280 - mw) / 2, my = (720 - mh) / 2;
+
+            fillRoundedRect(mx, my, mw, mh, 16, "#181d29");
+            strokeRoundedRect(mx, my, mw, mh, 16, "#00d2ff", 2);
+
+            drawGoogleIcon(mx + 45, my + 42, 32);
+            drawText(mx + 85, my + 26, "Vincular Conta Google", "#ffffff", 22, true);
+            drawText(mx + 85, my + 54, "Autorizacao de Dispositivo (OAuth 2.0)", "#8794aa", 14);
+
+            ctx.fillStyle = "#262e40";
+            ctx.fillRect(mx + 30, my + 84, mw - 60, 1);
+
+            let ty = my + 108;
+            drawText(mx + 45, ty, "1. Acesse o endereco abaixo no seu celular ou computador:", "#ffffff", 15);
+            ty += 28;
+            drawText(mx + 65, ty, "https://www.google.com/device", "#00d2ff", 18, true);
+
+            ty += 42;
+            drawText(mx + 45, ty, "2. Digite o codigo de ativacao exibido:", "#ffffff", 15);
+
+            ty += 26;
+            const codeW = 420, codeH = 68;
+            const codeX = mx + (mw - codeW) / 2;
+            fillRoundedRect(codeX, ty, codeW, codeH, 10, "#12161f");
+            strokeRoundedRect(codeX, ty, codeW, codeH, 10, "#ffba00", 2);
+            drawText(codeX + 140, ty + 18, "ABCD-EFGH", "#ffba00", 28, true);
+
+            ty += 92;
+            drawText(mx + 45, ty, "3. Faca login e confirme as permissoes de acesso.", "#ffffff", 15);
+
+            ty += 38;
+            const barW = mw - 90, barH = 8;
+            fillRoundedRect(mx + 45, ty, barW, barH, 4, "#262e40");
+            fillRoundedRect(mx + 45, ty, (Date.now() / 15) % (barW - 40) + 40, barH, 4, "#2ecc71");
+            drawText(mx + 45, ty + 18, "Aguardando confirmacao do navegador...", "#8794aa", 13);
+
+            const btnY = my + mh - 48;
+            drawBtnBadge(mx + mw - 150, btnY, "B", "#555c6c");
+            drawText(mx + mw - 120, btnY + 2, "Cancelar", "#ffffff", 14);
+        }
+
+        function renderSummaryModal() {
+            renderMainScreen();
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+            ctx.fillRect(0, 0, 1280, 720);
+
+            const mw = 720, mh = 380;
+            const mx = (1280 - mw) / 2, my = (720 - mh) / 2;
+
+            fillRoundedRect(mx, my, mw, mh, 14, "#181d29");
+            strokeRoundedRect(mx, my, mw, mh, 14, "#2ecc71", 2);
+
+            drawText(mx + 36, my + 30, "Backup Concluido", "#ffffff", 22, true);
+            ctx.fillStyle = "#262e40";
+            ctx.fillRect(mx + 36, my + 68, mw - 72, 1);
+
+            let ty = my + 96;
+            drawText(mx + 40, ty, "Arquivos processados com sucesso: 3", "#2ecc71", 16, true);
+            ty += 32;
+            drawText(mx + 40, ty, "Falhas ou erros de envio: 0", "#8794aa", 16);
+            ty += 36;
+            drawText(mx + 40, ty, "Todos os arquivos estao seguros e sincronizados no Google Drive.", "#8794aa", 15);
+
+            const btnY = my + mh - 52;
+            drawBtnBadge(mx + mw - 160, btnY, "A", "#ff3c56");
+            drawText(mx + mw - 130, btnY + 2, "Continuar", "#ffffff", 15);
+        }
+
+        // Loop Principal
+        function loop() {
+            if (currentScreen === 'MAIN') renderMainScreen();
+            else if (currentScreen === 'SETTINGS') renderSettingsScreen();
+            else if (currentScreen === 'MANAGE_GAMES') renderManageGamesScreen();
+            else if (currentScreen === 'DEVICE_AUTH') renderOAuthModal();
+            else if (currentScreen === 'SUMMARY') renderSummaryModal();
+
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+
+        // Inputs
+        function triggerKey(code) { handleAction(code); }
+        window.addEventListener('keydown', (e) => { handleAction(e.code); });
+
+        function handleAction(code) {
+            if (currentScreen === 'MAIN') {
+                if (code === 'ArrowUp' || code === 'KeyW') {
+                    if (mainSelectedIndex > 0) mainSelectedIndex--;
+                } else if (code === 'ArrowDown' || code === 'KeyS') {
+                    if (mainSelectedIndex < 3) mainSelectedIndex++;
+                } else if (code === 'Enter' || code === 'KeyZ' || code === 'KeyA') {
+                    if (mainSelectedIndex === 0) {
+                        showToast("Sincronizando todos os saves...", "#00d2ff");
+                        setTimeout(() => { currentScreen = 'SUMMARY'; }, 600);
+                    } else if (mainSelectedIndex === 1) {
+                        showToast("Verificando saves mais recentes na nuvem...", "#2ecc71");
+                    } else if (mainSelectedIndex === 2) {
+                        currentScreen = 'MANAGE_GAMES';
+                    } else if (mainSelectedIndex === 3) {
+                        currentScreen = 'DEVICE_AUTH';
+                    }
+                } else if (code === 'Minus' || code === 'KeyY') {
+                    currentScreen = 'SETTINGS';
+                    settingsSelectedIndex = 0;
+                }
+            } else if (currentScreen === 'SETTINGS') {
+                if (code === 'ArrowUp' || code === 'KeyW') {
+                    if (settingsSelectedIndex > 0) settingsSelectedIndex--;
+                } else if (code === 'ArrowDown' || code === 'KeyS') {
+                    if (settingsSelectedIndex < 3) settingsSelectedIndex++;
+                } else if (code === 'Enter' || code === 'KeyZ' || code === 'KeyA') {
+                    if (settingsSelectedIndex === 3) {
+                        showToast("Conexao ativa e pasta validada com sucesso!", "#2ecc71");
+                    } else {
+                        showToast("Configuracao salva com sucesso.", "#2ecc71");
+                    }
+                } else if (code === 'Escape' || code === 'KeyX' || code === 'KeyB' || code === 'Minus') {
+                    currentScreen = 'MAIN';
+                }
+            } else if (currentScreen === 'MANAGE_GAMES') {
+                if (code === 'ArrowUp' || code === 'KeyW') {
+                    if (gamesSelectedIndex > 0) gamesSelectedIndex--;
+                } else if (code === 'ArrowDown' || code === 'KeyS') {
+                    if (gamesSelectedIndex < games.length - 1) gamesSelectedIndex++;
+                } else if (code === 'Enter' || code === 'KeyZ' || code === 'KeyA') {
+                    games[gamesSelectedIndex].selected = !games[gamesSelectedIndex].selected;
+                } else if (code === 'KeyY' || code === 'KeyC' || code === 'Space') {
+                    const anyUnsel = games.some(g => !g.selected);
+                    games.forEach(g => g.selected = anyUnsel);
+                } else if (code === 'KeyX' || code === 'ShiftLeft' || code === 'ShiftRight') {
+                    showToast("Lista de favoritos salva com sucesso.", "#2ecc71");
+                } else if (code === 'Escape' || code === 'KeyB') {
+                    currentScreen = 'MAIN';
+                } else if (code === 'Plus') {
+                    showToast("Iniciando upload dos selecionados...", "#00d2ff");
+                    setTimeout(() => { currentScreen = 'SUMMARY'; }, 600);
+                }
+            } else if (currentScreen === 'DEVICE_AUTH' || currentScreen === 'SUMMARY') {
+                if (code === 'Escape' || code === 'KeyX' || code === 'KeyB' || code === 'Enter' || code === 'KeyZ' || code === 'KeyA') {
+                    currentScreen = 'MAIN';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
