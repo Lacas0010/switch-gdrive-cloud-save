@@ -21,17 +21,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef __SWITCH__
     // Rede via sockets para libcurl/mbedTLS
-    SocketInitConfig sockConfig = {
-        .bsdsockets_version = 1,
-        .tcp_tx_buf_size = 0x8000,
-        .tcp_rx_buf_size = 0x10000,
-        .tcp_tx_buf_max_size = 0x40000,
-        .tcp_rx_buf_max_size = 0x40000,
-        .udp_tx_buf_size = 0x2400,
-        .udp_rx_buf_size = 0xA500,
-        .sb_efficiency = 2,
-    };
-    Result sockRc = socketInitialize(&sockConfig);
+    Result sockRc = socketInitializeDefault();
     if (R_FAILED(sockRc)) {
         Utils::Logger::log("MAIN", "Falha ao inicializar socket libnx");
     }
