@@ -133,7 +133,9 @@ namespace UI {
 #ifdef __SWITCH__
             updateResolutionMode();
             m_framebuffer = reinterpret_cast<u32*>(framebufferBegin(&m_fb, &m_stride));
-            m_stride /= sizeof(u32);
+            if (m_framebuffer) {
+                m_stride /= sizeof(u32);
+            }
 #else
             m_framebuffer = m_mockBuffer.data();
             m_stride = m_width;

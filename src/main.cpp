@@ -5,6 +5,7 @@
 #include "storage/save_manager.hpp"
 #include "ui/ui_manager.hpp"
 #include "utils/log.hpp"
+#include <cstdio>
 
 #ifdef __SWITCH__
 #include <switch.h>
@@ -39,8 +40,8 @@ int main(int argc, char* argv[]) {
     });
 
     // Configuração de entrada dos controles (Pad)
-    PadState pad;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+    PadState pad;
     padInitializeDefault(&pad);
 #endif
 
@@ -61,19 +62,28 @@ int main(int argc, char* argv[]) {
 
         // Loop de eventos Horizon OS (Garantia Anti-Congelamento)
 #ifdef __SWITCH__
+        int frameCount = 0;
         while (appletMainLoop()) {
+            frameCount++;
             padUpdate(&pad);
             u64 kDown = padGetButtonsDown(&pad);
 
-            if (kDown & HidNpadButton_Plus) {
-                // (+) Pressionado para sair
+            // Debounce do botão (+): ignora eventuais transições no carregamento do hbmenu
+            if (frameCount > 15 && (kDown & HidNpadButton_Plus)) {
+                Utils::Logger::log("MAIN", "Saída solicitada pelo botão (+).");
                 break;
             }
 
             uiManager.handleInput(kDown);
             uiManager.update();
             uiManager.render();
+
+            svcSleepThread(16'000'000ULL); // 16ms = ~60 FPS e yield para o scheduler do Horizon OS
         }
+
+        char endBuf[64];
+        std::snprintf(endBuf, sizeof(endBuf), "Loop principal concluído após %d frames.", frameCount);
+        Utils::Logger::log("MAIN", endBuf);
 #else
         // Mock loop de teste de desktop
         for (int frame = 0; frame < 5; ++frame) {

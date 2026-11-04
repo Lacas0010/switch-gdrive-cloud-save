@@ -22,6 +22,8 @@ APP_VERSION     := 0.1.1
 
 ARCH            := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
+DEFINES         := -D__SWITCH__
+
 CFLAGS          := -g -Wall -O2 -ffunction-sections -fdata-sections \
                    $(ARCH) $(DEFINES)
 
