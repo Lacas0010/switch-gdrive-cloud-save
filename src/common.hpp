@@ -109,16 +109,89 @@ namespace Core {
         ScopedMountedSave(u64 titleId, AccountUid uid, bool readOnly = false)
             : m_mounted(false), m_committed(false), m_lastError(0) {
             fsdevUnmountDevice("save");
+
+            // 1. Tenta montar save da conta ativa
             Result rc = fsdevMountSaveData("save", titleId, uid);
+
+            // 2. Fallback: save de dispositivo (ex: Animal Crossing)
             if (R_FAILED(rc)) {
                 Result devRc = fsdevMountDeviceSaveData("save", titleId);
                 if (R_SUCCEEDED(devRc)) {
                     rc = devRc;
                 }
             }
+
+            // 3. Fallback: procura save existente do mesmo TitleID em outro perfil do console
+            if (R_FAILED(rc)) {
+                FsSaveDataInfoReader reader;
+                if (R_SUCCEEDED(fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User))) {
+                    FsSaveDataInfo buf[16];
+                    s64 count = 0;
+                    while (R_SUCCEEDED(fsSaveDataInfoReaderRead(&reader, buf, 16, &count)) && count > 0) {
+                        for (s64 i = 0; i < count; ++i) {
+                            if (buf[i].application_id == titleId && buf[i].save_data_type == FsSaveDataType_Account) {
+                                Result altRc = fsdevMountSaveData("save", titleId, buf[i].uid);
+                                if (R_SUCCEEDED(altRc)) {
+                                    rc = altRc;
+                                    break;
+                                }
+                            }
+                        }
+                        if (R_SUCCEEDED(rc)) break;
+                    }
+                    fsSaveDataInfoReaderClose(&reader);
+                }
+            }
+
+            // 4. Se estamos restaurando (!readOnly) e o save ainda não existe no Switch, cria a partição automaticamente
+            if (R_FAILED(rc) && !readOnly) {
+                s64 saveSize = 32 * 1024 * 1024;
+                s64 journalSize = 32 * 1024 * 1024;
+                u64 ownerId = titleId;
+
+                auto ctrl = std::make_unique<NsApplicationControlData>();
+                if (ctrl) {
+                    std::memset(ctrl.get(), 0, sizeof(NsApplicationControlData));
+                    u64 outSz = 0;
+                    if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, titleId, ctrl.get(), sizeof(NsApplicationControlData), &outSz)) &&
+                        outSz >= sizeof(NacpStruct)) {
+                        if (ctrl->nacp.user_account_save_data_size > 0) {
+                            saveSize = ctrl->nacp.user_account_save_data_size;
+                        }
+                        if (ctrl->nacp.user_account_save_data_journal_size > 0) {
+                            journalSize = ctrl->nacp.user_account_save_data_journal_size;
+                        }
+                        if (ctrl->nacp.save_data_owner_id != 0) {
+                            ownerId = ctrl->nacp.save_data_owner_id;
+                        }
+                    }
+                }
+
+                FsSaveDataAttribute attr{};
+                attr.application_id = titleId;
+                attr.uid = uid;
+                attr.save_data_type = FsSaveDataType_Account;
+
+                FsSaveDataCreationInfo create{};
+                create.save_data_size = saveSize;
+                create.journal_size = journalSize;
+                create.available_size = 0x4000;
+                create.owner_id = ownerId;
+                create.flags = 0;
+                create.save_data_space_id = FsSaveDataSpaceId_User;
+
+                FsSaveDataMetaInfo meta{};
+                meta.size = 0x40060;
+                meta.type = FsSaveDataMetaType_Thumbnail;
+
+                Result createRc = fsCreateSaveDataFileSystem(&attr, &create, &meta);
+                if (R_SUCCEEDED(createRc)) {
+                    rc = fsdevMountSaveData("save", titleId, uid);
+                }
+            }
+
             m_lastError = rc;
             m_mounted = R_SUCCEEDED(rc);
-            (void)readOnly;
         }
 
         ~ScopedMountedSave() {
