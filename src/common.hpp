@@ -27,6 +27,7 @@ struct AccountUid {
 };
 #endif
 
+#include <cstring>
 #include <memory>
 #include <functional>
 #include <string>
