@@ -47,6 +47,12 @@ namespace UI {
         constexpr u32 TEXT_DARK      = RGBA(18, 21, 30);
     }
 
+    struct TouchEvent {
+        bool tapped = false;
+        int x = 0;
+        int y = 0;
+    };
+
     class Display {
     public:
         Display()
@@ -233,6 +239,86 @@ namespace UI {
                     setPixel(x + dx, y + dy, col);
                 }
             }
+        }
+
+        void fillCircle(int cx, int cy, int radius, u32 color) {
+            int r2 = radius * radius;
+            for (int y = -radius; y <= radius; ++y) {
+                int dy2 = y * y;
+                for (int x = -radius; x <= radius; ++x) {
+                    if (x * x + dy2 <= r2) {
+                        setPixel(cx + x, cy + y, color);
+                    }
+                }
+            }
+        }
+
+        void drawGoogleDriveIcon(int cx, int cy, int size) {
+            int half = size / 2;
+            int w = static_cast<int>(size * 0.35f);
+            for (int dy = -half; dy <= 0; ++dy) {
+                int sx = cx + (-dy / 2);
+                drawRect(sx, cy + dy, w, 2, Colors::DRIVE_YELLOW);
+            }
+            for (int dy = 0; dy <= half; ++dy) {
+                int sx = cx + (dy / 2);
+                drawRect(sx, cy + dy, w, 2, Colors::DRIVE_GREEN);
+            }
+            int h = static_cast<int>(size * 0.40f);
+            for (int dx = -half; dx <= 0; ++dx) {
+                int sy = cy + (-dx / 2);
+                drawRect(cx + dx, sy, 2, h, Colors::DRIVE_BLUE);
+            }
+        }
+
+        void drawCloudUploadIcon(int cx, int cy, int size, u32 color) {
+            int r = size / 4;
+            fillCircle(cx - r, cy, r, color);
+            fillCircle(cx, cy - r / 2, static_cast<int>(r * 1.3f), color);
+            fillCircle(cx + r, cy, r, color);
+            drawRect(cx - r, cy, r * 2, r, color);
+
+            u32 arrowColor = Colors::TEXT_DARK;
+            int ah = size / 3;
+            drawRect(cx - 2, cy - ah / 4, 4, ah, arrowColor);
+            for (int i = 0; i < 6; ++i) {
+                drawRect(cx - i, cy - ah / 4 + i, i * 2 + 1, 1, arrowColor);
+            }
+        }
+
+        void drawCloudDownloadIcon(int cx, int cy, int size, u32 color) {
+            int r = size / 4;
+            fillCircle(cx - r, cy, r, color);
+            fillCircle(cx, cy - r / 2, static_cast<int>(r * 1.3f), color);
+            fillCircle(cx + r, cy, r, color);
+            drawRect(cx - r, cy, r * 2, r, color);
+
+            u32 arrowColor = Colors::TEXT_DARK;
+            int ah = size / 3;
+            int topY = cy - ah / 3;
+            int tipY = topY + ah;
+            drawRect(cx - 2, topY, 4, ah - 4, arrowColor);
+            for (int i = 0; i < 6; ++i) {
+                drawRect(cx - (5 - i), tipY - 5 + i, (5 - i) * 2 + 1, 1, arrowColor);
+            }
+        }
+
+        void drawGamepadIcon(int cx, int cy, int size, u32 color) {
+            int w = size;
+            int h = size * 2 / 3;
+            int x = cx - w / 2;
+            int y = cy - h / 2;
+            drawRoundedRect(x, y, w, h, 5, color);
+
+            int dX = x + 7, dY = cy - 1;
+            drawRect(dX - 3, dY, 7, 3, Colors::TEXT_DARK);
+            drawRect(dX - 1, dY - 2, 3, 7, Colors::TEXT_DARK);
+
+            int bX = x + w - 8, bY = cy;
+            fillCircle(bX, bY - 3, 1, Colors::JOYCON_YELLOW);
+            fillCircle(bX, bY + 3, 1, Colors::STATUS_GREEN);
+            fillCircle(bX - 3, bY, 1, Colors::JOYCON_BLUE);
+            fillCircle(bX + 3, bY, 1, Colors::JOYCON_RED);
         }
 
     private:

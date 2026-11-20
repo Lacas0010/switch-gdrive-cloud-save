@@ -122,11 +122,64 @@ namespace Core {
         return true;
     }
 
+    bool SyncEngine::startSingleBackup(u64 titleId, const std::string& displayName) {
+        if (m_isRunning.load(std::memory_order_relaxed)) return false;
+        poll();
+
+        m_targetTitleId = titleId;
+        m_targetDisplayName = displayName;
+        m_cancelRequested.store(false, std::memory_order_relaxed);
+        m_progress.store(0.0f, std::memory_order_relaxed);
+        m_isRunning.store(true, std::memory_order_relaxed);
+        m_stateMachine.setActiveOperation(OperationType::SINGLE_GAME_BACKUP);
+        m_stateMachine.setEngineState(EngineState::PROCESSING);
+        m_stateMachine.setScreen(Screen::OPERATION_PROGRESS);
+
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_currentGame = displayName.empty() ? "Backup Individual" : displayName;
+            m_statusDetail = "Preparando backup do jogo selecionado...";
+            m_summary = OperationSummary{};
+        }
+
+        m_workerThread = std::thread(&SyncEngine::runWorker, this, OperationType::SINGLE_GAME_BACKUP);
+        return true;
+    }
+
+    bool SyncEngine::startSingleRestore(const Network::DriveFileInfo& driveFile, const std::string& displayName) {
+        if (m_isRunning.load(std::memory_order_relaxed)) return false;
+        poll();
+
+        m_targetDriveFile = driveFile;
+        m_targetTitleId = driveFile.titleId;
+        m_targetDisplayName = displayName;
+        m_cancelRequested.store(false, std::memory_order_relaxed);
+        m_progress.store(0.0f, std::memory_order_relaxed);
+        m_isRunning.store(true, std::memory_order_relaxed);
+        m_stateMachine.setActiveOperation(OperationType::SINGLE_GAME_RESTORE);
+        m_stateMachine.setEngineState(EngineState::PROCESSING);
+        m_stateMachine.setScreen(Screen::OPERATION_PROGRESS);
+
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_currentGame = displayName.empty() ? driveFile.name : displayName;
+            m_statusDetail = "Baixando save selecionado do Google Drive...";
+            m_summary = OperationSummary{};
+        }
+
+        m_workerThread = std::thread(&SyncEngine::runWorker, this, OperationType::SINGLE_GAME_RESTORE);
+        return true;
+    }
+
     void SyncEngine::runWorker(OperationType op) {
         if (op == OperationType::FULL_BACKUP) {
             doBackupAll();
         } else if (op == OperationType::FULL_RESTORE) {
             doRestoreAll();
+        } else if (op == OperationType::SINGLE_GAME_BACKUP) {
+            doBackupSingle();
+        } else if (op == OperationType::SINGLE_GAME_RESTORE) {
+            doRestoreSingle();
         } else if (op == OperationType::TEST_CONNECTION) {
             doTestConnection();
         }
@@ -326,6 +379,160 @@ namespace Core {
         m_summary.finished = true;
         m_summary.totalProcessed = static_cast<int>(total);
         m_summary.success = (m_summary.failCount == 0);
+        m_progress.store(1.0f, std::memory_order_relaxed);
+    }
+
+    void SyncEngine::doBackupSingle() {
+        Storage::SaveManager::getActiveAccount(m_activeUid);
+        u64 tid = m_targetTitleId;
+        char tidHex[32];
+        std::snprintf(tidHex, sizeof(tidHex), "%016llX", static_cast<unsigned long long>(tid));
+
+        MKDIR_S("sdmc:/config");
+        MKDIR_S("sdmc:/config/gdrive-sync");
+        MKDIR_S("sdmc:/config/gdrive-sync/temp");
+
+        std::string tempZip = "sdmc:/config/gdrive-sync/temp/backup_" + std::string(tidHex) + ".zip";
+        std::remove(tempZip.c_str());
+
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_statusDetail = "Compactando save local...";
+            m_progress.store(0.2f, std::memory_order_relaxed);
+        }
+
+#ifdef __SWITCH__
+        Core::ScopedMountedSave mountGuard(tid, m_activeUid, true);
+        if (!mountGuard.isMounted()) {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_summary.finished = true;
+            m_summary.totalProcessed = 1;
+            m_summary.failCount = 1;
+            m_summary.success = false;
+            m_summary.logMessages.push_back("Falha ao montar save local: " + std::string(tidHex));
+            return;
+        }
+        bool zipOk = Storage::ZipUtil::zipDirectory("save:/", tempZip, &m_cancelRequested);
+        if (!zipOk) {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_summary.finished = true;
+            m_summary.totalProcessed = 1;
+            m_summary.failCount = 1;
+            m_summary.success = false;
+            m_summary.logMessages.push_back("Falha na compactação do save.");
+            return;
+        }
+#else
+        std::string mockDir = "sdmc:/config/gdrive-sync/temp/mock_" + std::string(tidHex);
+        MKDIR_S(mockDir.c_str());
+        FILE* mf = std::fopen((mockDir + "/data.bin").c_str(), "wb");
+        if (mf) { std::fwrite("DATA", 1, 4, mf); std::fclose(mf); }
+        Storage::ZipUtil::zipDirectory(mockDir, tempZip, &m_cancelRequested);
+#endif
+
+        u32 crc = 0;
+        Storage::ZipUtil::calculateFileCrc32(tempZip, crc);
+        std::time_t now = Utils::TimeUtil::getNowUtc();
+
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_statusDetail = "Enviando para o Google Drive...";
+            m_progress.store(0.5f, std::memory_order_relaxed);
+        }
+
+        std::string upErr;
+        bool upOk = m_client.uploadSaveLockstep(
+            tid,
+            Storage::SaveManager::formatUid(m_activeUid),
+            tempZip,
+            crc,
+            now,
+            &m_cancelRequested,
+            [this](float p, size_t, size_t) {
+                m_progress.store(0.5f + p * 0.5f, std::memory_order_relaxed);
+            },
+            &upErr
+        );
+        std::remove(tempZip.c_str());
+
+        std::lock_guard<std::mutex> lock(m_statusMutex);
+        m_summary.finished = true;
+        m_summary.totalProcessed = 1;
+        if (upOk) {
+            m_saveManager.setLocalSaveTimestamp(tid, now);
+            m_summary.successCount = 1;
+            m_summary.success = true;
+            m_summary.logMessages.push_back("Backup concluído: " + (m_targetDisplayName.empty() ? std::string(tidHex) : m_targetDisplayName));
+        } else {
+            m_summary.failCount = 1;
+            m_summary.success = false;
+            m_summary.logMessages.push_back("Erro no upload: " + upErr);
+        }
+        m_progress.store(1.0f, std::memory_order_relaxed);
+    }
+
+    void SyncEngine::doRestoreSingle() {
+        Storage::SaveManager::getActiveAccount(m_activeUid);
+        const auto& file = m_targetDriveFile;
+        u64 tid = file.titleId;
+
+        MKDIR_S("sdmc:/config");
+        MKDIR_S("sdmc:/config/gdrive-sync");
+        MKDIR_S("sdmc:/config/gdrive-sync/temp");
+
+        std::string tempZip = "sdmc:/config/gdrive-sync/temp/dl_" + file.id + ".zip";
+        std::remove(tempZip.c_str());
+
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_statusDetail = "Baixando save do Google Drive...";
+            m_progress.store(0.1f, std::memory_order_relaxed);
+        }
+
+        std::string dlErr;
+        bool dlOk = m_client.downloadFile(
+            file.id,
+            tempZip,
+            &m_cancelRequested,
+            [this](float p, size_t, size_t) {
+                m_progress.store(0.1f + p * 0.6f, std::memory_order_relaxed);
+            },
+            &dlErr
+        );
+
+        if (!dlOk) {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_summary.finished = true;
+            m_summary.totalProcessed = 1;
+            m_summary.failCount = 1;
+            m_summary.success = false;
+            m_summary.logMessages.push_back("Falha no download: " + dlErr);
+            m_progress.store(1.0f, std::memory_order_relaxed);
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_statusDetail = "Criando backup preventivo e restaurando save:/...";
+            m_progress.store(0.8f, std::memory_order_relaxed);
+        }
+
+        auto res = Storage::SaveManager::restoreSaveFromZip(tid, m_activeUid, tempZip, &m_cancelRequested);
+        std::remove(tempZip.c_str());
+
+        std::lock_guard<std::mutex> lock(m_statusMutex);
+        m_summary.finished = true;
+        m_summary.totalProcessed = 1;
+        if (res.success) {
+            m_saveManager.setLocalSaveTimestamp(tid, file.modifiedTime);
+            m_summary.successCount = 1;
+            m_summary.success = true;
+            m_summary.logMessages.push_back("Restaurado: " + (m_targetDisplayName.empty() ? file.name : m_targetDisplayName));
+        } else {
+            m_summary.failCount = 1;
+            m_summary.success = false;
+            m_summary.logMessages.push_back("Erro: " + res.errorMessage);
+        }
         m_progress.store(1.0f, std::memory_order_relaxed);
     }
 

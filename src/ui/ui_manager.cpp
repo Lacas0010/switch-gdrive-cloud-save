@@ -18,6 +18,7 @@ namespace UI {
         m_textures(),
         m_screenMain(m_display, syncEngine, driveClient, saveManager),
         m_screenSelect(m_display, m_textures, saveManager, driveClient),
+        m_screenRestore(m_display, m_textures, saveManager, driveClient),
         m_settingsOption(0) {}
 
     UIManager::~UIManager() {
@@ -35,6 +36,23 @@ namespace UI {
         m_display.cleanup();
     }
 
+    void UIManager::activateMainCard(int sel) {
+        if (sel == 0) {
+            m_engine.startFullBackup();
+        } else if (sel == 1) {
+            // Abre a tela de comparação jogo por jogo (Drive vs Local)
+            m_screenRestore.refreshAsync();
+            m_stateMachine.setScreen(Core::Screen::RESTORE_SELECT);
+        } else if (sel == 2) {
+            m_screenSelect.refreshGames();
+            m_stateMachine.setScreen(Core::Screen::GAME_SELECT);
+        } else if (sel == 3) {
+            // Sempre abre o modal de vinculação (exibe código ou erro detalhado)
+            m_oauth.startDeviceAuth();
+            m_stateMachine.setScreen(Core::Screen::OAUTH_MODAL);
+        }
+    }
+
     void UIManager::handleInput(u64 kDown) {
         Core::Screen curScreen = m_stateMachine.getScreen();
 
@@ -42,19 +60,7 @@ namespace UI {
             m_screenMain.handleInput(kDown);
 #ifdef __SWITCH__
             if (kDown & HidNpadButton_A) {
-                int sel = m_screenMain.getSelectedIndex();
-                if (sel == 0) {
-                    m_engine.startFullBackup();
-                } else if (sel == 1) {
-                    m_engine.startFullRestore();
-                } else if (sel == 2) {
-                    m_screenSelect.refreshGames();
-                    m_stateMachine.setScreen(Core::Screen::GAME_SELECT);
-                } else if (sel == 3) {
-                    // Sempre abre o modal de vinculação (exibe código ou erro detalhado)
-                    m_oauth.startDeviceAuth();
-                    m_stateMachine.setScreen(Core::Screen::OAUTH_MODAL);
-                }
+                activateMainCard(m_screenMain.getSelectedIndex());
             } else if ((kDown & HidNpadButton_Minus) || (kDown & HidNpadButton_Y)) {
                 m_stateMachine.setScreen(Core::Screen::SETTINGS);
             } else if (kDown & HidNpadButton_X) {
@@ -66,6 +72,27 @@ namespace UI {
 #ifdef __SWITCH__
             if (kDown & HidNpadButton_B) {
                 m_stateMachine.setScreen(Core::Screen::MAIN);
+            } else if (kDown & HidNpadButton_A) {
+                u64 tid = m_screenSelect.getSelectedTitleId();
+                if (tid != 0) {
+                    m_engine.startSingleBackup(tid, m_textures.getTitleName(tid));
+                }
+            }
+#endif
+        } else if (curScreen == Core::Screen::RESTORE_SELECT) {
+            m_screenRestore.handleInput(kDown);
+#ifdef __SWITCH__
+            if (kDown & HidNpadButton_B) {
+                m_stateMachine.setScreen(Core::Screen::MAIN);
+            } else if (kDown & HidNpadButton_A) {
+                if (!m_screenRestore.isLoading() && m_screenRestore.hasSelectedCandidate()) {
+                    auto cand = m_screenRestore.getSelectedCandidate();
+                    m_engine.startSingleRestore(cand.driveFile, m_textures.getTitleName(cand.driveFile.titleId));
+                }
+            } else if (kDown & HidNpadButton_Y) {
+                m_engine.startFullRestore();
+            } else if (kDown & HidNpadButton_X) {
+                m_screenRestore.refreshAsync();
             }
 #endif
         } else if (curScreen == Core::Screen::SETTINGS) {
@@ -90,7 +117,6 @@ namespace UI {
                 m_oauth.cancelAuth();
                 m_stateMachine.setScreen(Core::Screen::MAIN);
             } else if (kDown & HidNpadButton_X) {
-                // Tentar gerar novo código OAuth2
                 m_oauth.startDeviceAuth();
             }
 #endif
@@ -109,8 +135,102 @@ namespace UI {
         }
     }
 
+    bool UIManager::handleTouch(const TouchEvent& touch) {
+        if (!touch.tapped) return false;
+
+        Core::Screen curScreen = m_stateMachine.getScreen();
+        int dispW = static_cast<int>(m_display.getWidth());
+        int dispH = static_cast<int>(m_display.getHeight());
+
+        if (curScreen == Core::Screen::MAIN) {
+            auto act = m_screenMain.handleTouch(touch);
+            if (act == MainTouchAction::ACTIVATE_CARD) {
+                activateMainCard(m_screenMain.getSelectedIndex());
+            } else if (act == MainTouchAction::OPEN_HELP) {
+                m_stateMachine.setScreen(Core::Screen::HELP_MODAL);
+            } else if (act == MainTouchAction::OPEN_SETTINGS) {
+                m_stateMachine.setScreen(Core::Screen::SETTINGS);
+            } else if (act == MainTouchAction::EXIT_APP) {
+                return true;
+            }
+        } else if (curScreen == Core::Screen::GAME_SELECT) {
+            auto act = m_screenSelect.handleTouch(touch);
+            if (act == SelectTouchAction::BACK) {
+                m_stateMachine.setScreen(Core::Screen::MAIN);
+            } else if (act == SelectTouchAction::SYNC_SELECTED) {
+                u64 tid = m_screenSelect.getSelectedTitleId();
+                if (tid != 0) {
+                    m_engine.startSingleBackup(tid, m_textures.getTitleName(tid));
+                }
+            }
+        } else if (curScreen == Core::Screen::RESTORE_SELECT) {
+            auto act = m_screenRestore.handleTouch(touch);
+            if (act == RestoreTouchAction::BACK) {
+                m_stateMachine.setScreen(Core::Screen::MAIN);
+            } else if (act == RestoreTouchAction::REFRESH) {
+                m_screenRestore.refreshAsync();
+            } else if (act == RestoreTouchAction::RESTORE_ALL) {
+                m_engine.startFullRestore();
+            } else if (act == RestoreTouchAction::RESTORE_SELECTED) {
+                if (!m_screenRestore.isLoading() && m_screenRestore.hasSelectedCandidate()) {
+                    auto cand = m_screenRestore.getSelectedCandidate();
+                    m_engine.startSingleRestore(cand.driveFile, m_textures.getTitleName(cand.driveFile.titleId));
+                }
+            }
+        } else if (curScreen == Core::Screen::SETTINGS) {
+            int modalW = 600, modalH = 400;
+            int modalX = (dispW - modalW) / 2;
+            int modalY = (dispH - modalH) / 2;
+            bool inside = (touch.x >= modalX && touch.x <= modalX + modalW && touch.y >= modalY && touch.y <= modalY + modalH);
+            if (!inside || touch.y >= modalY + modalH - 56) {
+                m_stateMachine.setScreen(Core::Screen::MAIN);
+            } else if (touch.y >= modalY + 230 && touch.y <= modalY + 300) {
+                m_engine.startTestConnection();
+            }
+        } else if (curScreen == Core::Screen::OAUTH_MODAL) {
+            int modalW = 680, modalH = 400;
+            int modalX = (dispW - modalW) / 2;
+            int modalY = (dispH - modalH) / 2;
+            bool inside = (touch.x >= modalX && touch.x <= modalX + modalW && touch.y >= modalY && touch.y <= modalY + modalH);
+            if (!inside) {
+                m_oauth.cancelAuth();
+                m_stateMachine.setScreen(Core::Screen::MAIN);
+            } else if (touch.y >= modalY + modalH - 56) {
+                if (touch.x < modalX + 260) {
+                    m_oauth.startDeviceAuth();
+                } else {
+                    m_oauth.cancelAuth();
+                    m_stateMachine.setScreen(Core::Screen::MAIN);
+                }
+            }
+        } else if (curScreen == Core::Screen::HELP_MODAL) {
+            int modalW = 860, modalH = 500;
+            int modalX = (dispW - modalW) / 2;
+            int modalY = (dispH - modalH) / 2;
+            bool inside = (touch.x >= modalX && touch.x <= modalX + modalW && touch.y >= modalY && touch.y <= modalY + modalH);
+            if (!inside || touch.y >= modalY + modalH - 56) {
+                m_stateMachine.setScreen(Core::Screen::MAIN);
+            }
+        } else if (curScreen == Core::Screen::OPERATION_PROGRESS) {
+            int modalW = 720, modalH = 390;
+            int modalX = (dispW - modalW) / 2;
+            int modalY = (dispH - modalH) / 2;
+            if (m_engine.isRunning()) {
+                if (touch.y >= modalY + modalH - 56) {
+                    m_engine.requestCancel();
+                }
+            } else {
+                // Qualquer toque após concluir fecha o modal de resumo
+                m_stateMachine.setScreen(Core::Screen::MAIN);
+            }
+        }
+
+        return false;
+    }
+
     void UIManager::update() {
         m_engine.poll();
+        m_screenRestore.poll();
 
         if (m_stateMachine.getScreen() == Core::Screen::OAUTH_MODAL) {
             auto status = m_oauth.pollAuthStatus();
@@ -121,7 +241,6 @@ namespace UI {
     }
 
     void UIManager::renderSettingsModal() {
-        // Overlay escuro translúcido
         m_display.drawRect(0, 0, static_cast<int>(m_display.getWidth()), static_cast<int>(m_display.getHeight()), RGBA(0, 0, 0, 180));
 
         int modalW = 600;
@@ -146,11 +265,9 @@ namespace UI {
         m_display.drawText(modalX + 28, curY, shortCid, 16, Colors::TEXT_PRIMARY);
 
         curY += 56;
-        // Botão Testar Conexão
         m_display.drawRoundedRect(modalX + 28, curY, modalW - 56, 50, 10, Colors::CARD_HOVER_BG);
         m_display.drawText(modalX + 44, curY + 14, "(A) Testar Conexão e Permissões da API", 18, Colors::JOYCON_CYAN);
 
-        // Rodapé do Modal
         m_display.drawText(modalX + 28, modalY + modalH - 36, "(B) Fechar Configurações", 16, Colors::TEXT_MUTED);
     }
 
@@ -188,7 +305,6 @@ namespace UI {
 
         m_display.drawText(modalX + 28, modalY + 160, "2. Digite o código exibido abaixo:", 16, Colors::TEXT_MUTED);
 
-        // Caixa de destaque do código
         m_display.drawRoundedRect(modalX + 28, modalY + 190, modalW - 56, 70, 12, Colors::CARD_ALT_BG);
         std::string code = m_oauth.getUserCode();
         if (code.empty()) code = "GERANDO...";
@@ -218,7 +334,6 @@ namespace UI {
             m_display.drawText(modalX + 32, modalY + 90, m_engine.getCurrentGame(), 20, Colors::JOYCON_CYAN);
             m_display.drawText(modalX + 32, modalY + 120, m_engine.getStatusDetail(), 16, Colors::TEXT_MUTED);
 
-            // Barra de progresso
             int barX = modalX + 32;
             int barY = modalY + 170;
             int barW = modalW - 64;
@@ -238,30 +353,32 @@ namespace UI {
             m_display.drawText(modalX + 32, modalY + modalH - 36, "(B) Cancelar Operação", 16, Colors::TEXT_MUTED);
         } else {
             auto summary = m_engine.getSummary();
-            std::string title = summary.success ? "Upload Concluído com Sucesso!" : "Operação Concluída com Avisos";
+            std::string title = summary.success ? "Operação Concluída com Sucesso!" : "Operação Concluída com Avisos";
             u32 titleColor = summary.success ? Colors::STATUS_GREEN : Colors::JOYCON_YELLOW;
             m_display.drawText(modalX + 32, modalY + 20, title, 22, titleColor);
 
             int statY = modalY + 90;
-            m_display.drawText(modalX + 32, statY, "Estatísticas da Operação:", 16, Colors::JOYCON_YELLOW);
+            m_display.drawText(modalX + 32, statY, "Resumo da Operação:", 16, Colors::JOYCON_YELLOW);
             statY += 28;
 
-            char sBuf[96];
-            std::snprintf(sBuf, sizeof(sBuf), "• Saves sincronizados com sucesso: %d", summary.successCount);
+            char sBuf[128];
+            std::snprintf(sBuf, sizeof(sBuf), "• Concluídos com sucesso: %d", summary.successCount);
             m_display.drawText(modalX + 44, statY, sBuf, 15, Colors::STATUS_GREEN);
             statY += 26;
 
-            std::snprintf(sBuf, sizeof(sBuf), "• Falhas ou erros de envio: %d", summary.failCount);
+            std::snprintf(sBuf, sizeof(sBuf), "• Falhas ou erros: %d", summary.failCount);
             m_display.drawText(modalX + 44, statY, sBuf, 15, summary.failCount == 0 ? Colors::TEXT_MUTED : Colors::STATUS_RED);
             statY += 26;
 
-            m_display.drawText(modalX + 44, statY, "• Pasta de destino na nuvem: \"Switch Saves/\"", 15, Colors::JOYCON_CYAN);
-            statY += 26;
+            if (!summary.logMessages.empty()) {
+                m_display.drawText(modalX + 44, statY, "• " + summary.logMessages.back(), 15, Colors::JOYCON_CYAN);
+                statY += 26;
+            }
 
-            m_display.drawText(modalX + 44, statY, "• Histórico versionado salvo em snapshots com CRC32 verificado.", 15, Colors::TEXT_PRIMARY);
+            m_display.drawText(modalX + 44, statY, "• Backup preventivo local e verificação CRC32 ativos.", 14, Colors::TEXT_PRIMARY);
 
             m_display.drawRect(modalX, modalY + modalH - 52, modalW, 1, Colors::CARD_OUTLINE);
-            m_display.drawText(modalX + modalW - 160, modalY + modalH - 36, "(A) Continuar", 16, Colors::JOYCON_CYAN);
+            m_display.drawText(modalX + modalW - 180, modalY + modalH - 36, "(A) / Toque Continuar", 15, Colors::JOYCON_CYAN);
         }
     }
 
@@ -280,34 +397,30 @@ namespace UI {
 
         int curY = modalY + 84;
 
-        // Seção 1: Como Funciona
         m_display.drawText(modalX + 32, curY, "Como Funciona a Sincronização:", 16, Colors::JOYCON_YELLOW);
         curY += 24;
-        m_display.drawText(modalX + 44, curY, "• Sincronização sob demanda: executa backups e restaurações apenas quando solicitado.", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• Sincronização sob demanda: backup completo ou individual por jogo.", 14, Colors::TEXT_PRIMARY);
         curY += 22;
-        m_display.drawText(modalX + 44, curY, "• Execução em primeiro plano: sem processos em segundo plano ou impacto de desempenho.", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• Restauração seletiva: compare data e tamanho (Drive vs Local) antes de restaurar.", 14, Colors::TEXT_PRIMARY);
         curY += 22;
-        m_display.drawText(modalX + 44, curY, "• Saves empacotados em PKZIP e validados por verificação de integridade CRC32 bloco a bloco.", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• Saves empacotados em PKZIP e validados por CRC32 bloco a bloco.", 14, Colors::TEXT_PRIMARY);
 
         curY += 34;
-        // Seção 2: Requisitos e Proteção de Dados
         m_display.drawText(modalX + 32, curY, "Requisitos & Proteção de Dados:", 16, Colors::JOYCON_YELLOW);
         curY += 24;
-        m_display.drawText(modalX + 44, curY, "• Credenciais OAuth 2.0 armazenadas com segurança em sdmc:/config/gdrive-sync/config.json.", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• Credenciais OAuth 2.0 armazenadas em sdmc:/config/gdrive-sync/config.json.", 14, Colors::TEXT_PRIMARY);
         curY += 22;
-        m_display.drawText(modalX + 44, curY, "• Backup preventivo automático local gerado antes de qualquer restauração para save:/.", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• Backup preventivo local gerado automaticamente antes de sobrescrever save:/.", 14, Colors::TEXT_PRIMARY);
         curY += 22;
-        m_display.drawText(modalX + 44, curY, "• Trava de segurança temporal RTC: impede substituição acidental se o relógio estiver descalibrado.", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• Rollback automático em caso de falha na extração ou commit.", 14, Colors::TEXT_PRIMARY);
 
         curY += 34;
-        // Seção 3: Controlos da Interface
-        m_display.drawText(modalX + 32, curY, "Controlos da Interface:", 16, Colors::JOYCON_YELLOW);
+        m_display.drawText(modalX + 32, curY, "Controlos & Tela de Toque:", 16, Colors::JOYCON_YELLOW);
         curY += 24;
-        m_display.drawText(modalX + 44, curY, "• [D-Pad / Analógico]: Navegar pelas opções e listas de jogos", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• [Touchscreen]: Toque diretamente nos cards, botões e rodapé em qualquer tela", 14, Colors::TEXT_PRIMARY);
         curY += 22;
-        m_display.drawText(modalX + 44, curY, "• [A]: Confirmar / [B]: Voltar ou Cancelar / [-]: Configurações / [+]: Sair", 14, Colors::TEXT_PRIMARY);
+        m_display.drawText(modalX + 44, curY, "• [D-Pad / Analógico]: Navegar | [A]: Confirmar | [B]: Voltar | [-]: Config | [+]: Sair", 14, Colors::TEXT_PRIMARY);
 
-        // Rodapé
         m_display.drawRect(modalX, modalY + modalH - 52, modalW, 1, Colors::CARD_OUTLINE);
         m_display.drawText(modalX + modalW - 130, modalY + modalH - 36, "(B) Fechar", 16, Colors::JOYCON_CYAN);
     }
@@ -318,6 +431,8 @@ namespace UI {
         Core::Screen curScreen = m_stateMachine.getScreen();
         if (curScreen == Core::Screen::GAME_SELECT) {
             m_screenSelect.render();
+        } else if (curScreen == Core::Screen::RESTORE_SELECT) {
+            m_screenRestore.render();
         } else {
             m_screenMain.render();
         }

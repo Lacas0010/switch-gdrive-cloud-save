@@ -6,6 +6,14 @@
 
 namespace UI {
 
+    enum class MainTouchAction {
+        NONE,
+        ACTIVATE_CARD,
+        OPEN_HELP,
+        OPEN_SETTINGS,
+        EXIT_APP
+    };
+
     class ScreenMain {
     public:
         ScreenMain(
@@ -16,6 +24,7 @@ namespace UI {
         );
 
         void handleInput(u64 kDown);
+        MainTouchAction handleTouch(const TouchEvent& touch);
         void render();
 
         int getSelectedIndex() const noexcept { return m_selectedCard; }

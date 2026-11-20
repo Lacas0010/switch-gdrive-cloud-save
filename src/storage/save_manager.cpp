@@ -119,6 +119,7 @@ namespace Storage {
                     info.uid = uid;
                     info.uidStr = formatUid(uid);
                     info.lastModified = getLocalSaveTimestamp(info.titleId, uid);
+                    info.sizeBytes = static_cast<size_t>(item.size);
                     results.push_back(info);
                 }
             }
@@ -141,6 +142,37 @@ namespace Storage {
         results.push_back(s2);
 #endif
         return results;
+    }
+
+    bool SaveManager::getLocalSaveStats(u64 titleId, const AccountUid& uid, size_t& outBytes, std::time_t& outLastModified) {
+        outBytes = 0;
+        outLastModified = getLocalSaveTimestamp(titleId, uid);
+#ifdef __SWITCH__
+        Core::ScopedMountedSave mountGuard(titleId, uid, true);
+        if (!mountGuard.isMounted()) {
+            return false;
+        }
+        std::vector<std::string> files;
+        ZipUtil::listFilesRecursive("save:/", "", files);
+        std::time_t newestFileTime = 0;
+        for (const auto& rel : files) {
+            std::string fullPath = "save:/" + rel;
+            struct stat st{};
+            if (stat(fullPath.c_str(), &st) == 0) {
+                outBytes += static_cast<size_t>(st.st_size);
+                if (st.st_mtime > newestFileTime) {
+                    newestFileTime = st.st_mtime;
+                }
+            }
+        }
+        if (newestFileTime > outLastModified) {
+            outLastModified = newestFileTime;
+        }
+        return true;
+#else
+        outBytes = 4096;
+        return outLastModified > 0;
+#endif
     }
 
     std::time_t SaveManager::getLocalSaveTimestamp(u64 titleId, const AccountUid& uid) {

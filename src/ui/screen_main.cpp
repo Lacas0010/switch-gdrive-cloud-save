@@ -16,14 +16,50 @@ namespace UI {
 
     void ScreenMain::handleInput(u64 kDown) {
 #ifdef __SWITCH__
-        if (kDown & HidNpadButton_Down) {
+        if (kDown & (HidNpadButton_Down | HidNpadButton_StickLDown)) {
             m_selectedCard = (m_selectedCard + 1) % 4;
-        } else if (kDown & HidNpadButton_Up) {
+        } else if (kDown & (HidNpadButton_Up | HidNpadButton_StickLUp)) {
             m_selectedCard = (m_selectedCard + 3) % 4;
         }
 #else
         (void)kDown;
 #endif
+    }
+
+    MainTouchAction ScreenMain::handleTouch(const TouchEvent& touch) {
+        if (!touch.tapped) return MainTouchAction::NONE;
+
+        int dispW = static_cast<int>(m_display.getWidth());
+        int dispH = static_cast<int>(m_display.getHeight());
+        int footerY = dispH - 48;
+
+        // Toque nos botões do rodapé
+        if (touch.y >= footerY) {
+            if (touch.x >= 180 && touch.x < 365) return MainTouchAction::OPEN_HELP;
+            if (touch.x >= 365 && touch.x < 565) return MainTouchAction::OPEN_SETTINGS;
+            if (touch.x >= 565 && touch.x < 710) return MainTouchAction::EXIT_APP;
+            if (touch.x < 180) return MainTouchAction::ACTIVATE_CARD;
+            return MainTouchAction::NONE;
+        }
+
+        // Toque nos 4 cards de ação à direita
+        int startX = 400;
+        int startY = 88;
+        int cardW = dispW - startX - 36;
+        int cardH = 92;
+        int spacing = 18;
+
+        if (touch.x >= startX && touch.x <= startX + cardW) {
+            for (int i = 0; i < 4; ++i) {
+                int y = startY + i * (cardH + spacing);
+                if (touch.y >= y && touch.y <= y + cardH) {
+                    m_selectedCard = i;
+                    return MainTouchAction::ACTIVATE_CARD;
+                }
+            }
+        }
+
+        return MainTouchAction::NONE;
     }
 
     void ScreenMain::renderHeader() {
@@ -73,10 +109,10 @@ namespace UI {
         m_display.drawText(panelX + 24, curY, ready ? "Pronto para Sincronia" : "Aguardando Vinculação", 16, ready ? Colors::STATUS_GREEN : Colors::JOYCON_YELLOW);
 
         curY += 46;
-        // 4. Jogos Rasteados
+        // 4. Versão do Sistema
         m_display.drawText(panelX + 24, curY, "Versão do Sistema", 14, Colors::TEXT_MUTED);
         curY += 22;
-        m_display.drawText(panelX + 24, curY, "v0.1.1 (Produção)", 16, Colors::TEXT_MUTED);
+        m_display.drawText(panelX + 24, curY, "v0.1.1 (Touch + Seletivo)", 16, Colors::TEXT_MUTED);
     }
 
     void ScreenMain::renderRightCards() {
@@ -94,8 +130,8 @@ namespace UI {
 
         static constexpr CardDef cards[4] = {
             {"Backup Completo", "Envia todos os saves do perfil ativo para o Google Drive", Colors::JOYCON_CYAN},
-            {"Restaurar da Nuvem", "Atualiza saves locais que estejam mais recentes na nuvem", Colors::STATUS_GREEN},
-            {"Gerenciar por Jogo", "Visualizar histórico, selecionar títulos e restaurar snapshots", Colors::JOYCON_YELLOW},
+            {"Restaurar da Nuvem", "Compara data/tamanho Drive vs Local e restaura jogo por jogo", Colors::STATUS_GREEN},
+            {"Gerenciar por Jogo", "Visualizar jogos locais e enviar backup individual", Colors::JOYCON_YELLOW},
             {"Vincular Conta Google", "Autenticar via código na tela em google.com/device", Colors::DRIVE_BLUE}
         };
 
@@ -104,16 +140,29 @@ namespace UI {
             bool isSelected = (m_selectedCard == i);
 
             u32 bgCol = isSelected ? Colors::CARD_HOVER_BG : Colors::CARD_BG;
-            u32 borderCol = isSelected ? Colors::CARD_HOVER_OUT : Colors::CARD_OUTLINE;
 
             m_display.drawRoundedRect(startX, y, cardW, cardH, 12, bgCol);
             if (isSelected) {
                 // Indicador de foco Joy-Con no lado esquerdo do card
-                m_display.drawRect(startX, y + 8, 4, cardH - 16, Colors::JOYCON_CYAN);
+                m_display.drawRect(startX, y + 8, 4, cardH - 16, cards[i].iconColor);
             }
 
-            // Ícone colorido de identificação visual
-            m_display.drawRoundedRect(startX + 20, y + 22, 48, 48, 8, cards[i].iconColor);
+            // Moldura do ícone vetorial (48x48)
+            int boxX = startX + 20;
+            int boxY = y + 22;
+            m_display.drawRoundedRect(boxX, boxY, 48, 48, 10, Colors::CARD_ALT_BG);
+
+            int icx = boxX + 24;
+            int icy = boxY + 24;
+            if (i == 0) {
+                m_display.drawCloudUploadIcon(icx, icy, 26, Colors::JOYCON_CYAN);
+            } else if (i == 1) {
+                m_display.drawCloudDownloadIcon(icx, icy, 26, Colors::STATUS_GREEN);
+            } else if (i == 2) {
+                m_display.drawGamepadIcon(icx, icy, 26, Colors::JOYCON_YELLOW);
+            } else {
+                m_display.drawGoogleDriveIcon(icx, icy, 22);
+            }
 
             // Título e subtítulo
             m_display.drawText(startX + 84, y + 20, cards[i].title, 20, Colors::TEXT_WHITE);

@@ -7,6 +7,12 @@
 
 namespace UI {
 
+    enum class SelectTouchAction {
+        NONE,
+        SYNC_SELECTED,
+        BACK
+    };
+
     class ScreenSelect {
     public:
         ScreenSelect(
@@ -18,6 +24,7 @@ namespace UI {
 
         void refreshGames();
         void handleInput(u64 kDown);
+        SelectTouchAction handleTouch(const TouchEvent& touch);
         void render();
 
         u64 getSelectedTitleId() const noexcept;

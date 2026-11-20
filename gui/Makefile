@@ -56,6 +56,7 @@ CPPFILES        := ../src/main.cpp \
                    ../src/ui/texture_cache.cpp \
                    ../src/ui/screen_main.cpp \
                    ../src/ui/screen_select.cpp \
+                   ../src/ui/screen_restore.cpp \
                    ../src/ui/ui_manager.cpp \
                    ../src/utils/log.cpp \
                    ../src/utils/time_util.cpp

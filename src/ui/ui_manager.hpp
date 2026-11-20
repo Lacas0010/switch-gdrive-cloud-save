@@ -3,9 +3,12 @@
 #include "texture_cache.hpp"
 #include "screen_main.hpp"
 #include "screen_select.hpp"
+#include "screen_restore.hpp"
 #include "../core/state_machine.hpp"
 #include "../core/sync_engine.hpp"
+#include "../network/drive_client.hpp"
 #include "../network/oauth_manager.hpp"
+#include "../storage/save_manager.hpp"
 
 namespace UI {
 
@@ -23,10 +26,16 @@ namespace UI {
         void cleanup();
 
         void handleInput(u64 kDown);
+        // Retorna true caso o usuário tenha tocado no botão Sair (+)
+        bool handleTouch(const TouchEvent& touch);
         void update();
         void render();
 
+        u32 getDisplayWidth() const noexcept { return m_display.getWidth(); }
+        u32 getDisplayHeight() const noexcept { return m_display.getHeight(); }
+
     private:
+        void activateMainCard(int sel);
         void renderSettingsModal();
         void renderOAuthModal();
         void renderOperationModal();
@@ -42,6 +51,7 @@ namespace UI {
         TextureCache m_textures;
         ScreenMain m_screenMain;
         ScreenSelect m_screenSelect;
+        ScreenRestore m_screenRestore;
 
         int m_settingsOption;
     };

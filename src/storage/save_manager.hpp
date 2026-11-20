@@ -14,6 +14,7 @@ namespace Storage {
         AccountUid uid{};
         std::string uidStr;
         std::time_t lastModified = 0;
+        size_t sizeBytes = 0;
         u32 lastCrc = 0;
         bool isDeviceSave = false;
     };
@@ -35,6 +36,9 @@ namespace Storage {
 
         // Enumera todos os jogos com partição de save existente no console para o usuário
         std::vector<GameSaveInfo> listAvailableSaves(const AccountUid& uid);
+
+        // Calcula o tamanho total real dos arquivos em save:/ e a data de modificação mais recente
+        bool getLocalSaveStats(u64 titleId, const AccountUid& uid, size_t& outBytes, std::time_t& outLastModified);
 
         // Gestão de timestamps e metadados locais gravados no SDMC
         std::time_t getLocalSaveTimestamp(u64 titleId, const AccountUid& uid);

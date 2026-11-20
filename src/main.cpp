@@ -40,10 +40,11 @@ int main(int argc, char* argv[]) {
         if (R_SUCCEEDED(sockRc)) socketExit();
     });
 
-    // Configuração de entrada dos controles (Pad)
+    // Configuração de entrada dos controles (Pad) e tela sensível ao toque
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad;
     padInitializeDefault(&pad);
+    hidInitializeTouchScreen();
 #endif
 
     {
@@ -59,11 +60,15 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        Utils::Logger::log("MAIN", "Loop principal iniciado a 60 FPS contínuos.");
+        Utils::Logger::log("MAIN", "Loop principal iniciado a 60 FPS contínuos (Controles + Touch).");
 
         // Loop de eventos Horizon OS (Garantia Anti-Congelamento)
 #ifdef __SWITCH__
         int frameCount = 0;
+        bool wasTouching = false;
+        int lastTouchX = 0;
+        int lastTouchY = 0;
+
         while (appletMainLoop()) {
             frameCount++;
             padUpdate(&pad);
@@ -75,7 +80,34 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
+            // Leitura da tela sensível ao toque (dispara ao soltar o dedo para evitar duplo-toque)
+            UI::TouchEvent touchEvent{};
+            HidTouchScreenState touchState{};
+            if (hidGetTouchScreenStates(&touchState, 1) && touchState.count > 0) {
+                int rawX = static_cast<int>(touchState.touches[0].x);
+                int rawY = static_cast<int>(touchState.touches[0].y);
+                int dispW = static_cast<int>(uiManager.getDisplayWidth());
+                int dispH = static_cast<int>(uiManager.getDisplayHeight());
+                lastTouchX = (rawX * dispW) / 1280;
+                lastTouchY = (rawY * dispH) / 720;
+                wasTouching = true;
+            } else if (wasTouching) {
+                wasTouching = false;
+                if (frameCount > 15) {
+                    touchEvent.tapped = true;
+                    touchEvent.x = lastTouchX;
+                    touchEvent.y = lastTouchY;
+                }
+            }
+
             uiManager.handleInput(kDown);
+            if (touchEvent.tapped) {
+                if (uiManager.handleTouch(touchEvent)) {
+                    Utils::Logger::log("MAIN", "Saída solicitada via toque no botão (+).");
+                    break;
+                }
+            }
+
             uiManager.update();
             uiManager.render();
 

@@ -28,6 +28,8 @@ namespace Core {
         // Operações em segundo plano (não bloqueiam o loop da UI)
         bool startFullBackup();
         bool startFullRestore();
+        bool startSingleBackup(u64 titleId, const std::string& displayName = "");
+        bool startSingleRestore(const Network::DriveFileInfo& driveFile, const std::string& displayName = "");
         bool startTestConnection();
         void requestCancel();
 
@@ -47,6 +49,8 @@ namespace Core {
         void runWorker(OperationType op);
         void doBackupAll();
         void doRestoreAll();
+        void doBackupSingle();
+        void doRestoreSingle();
         void doTestConnection();
 
         Network::DriveClient& m_client;
@@ -62,6 +66,11 @@ namespace Core {
         std::string m_currentGame;
         std::string m_statusDetail;
         OperationSummary m_summary;
+
+        // Parâmetros para operações de jogo único
+        u64 m_targetTitleId = 0;
+        std::string m_targetDisplayName;
+        Network::DriveFileInfo m_targetDriveFile;
 
         AccountUid m_activeUid;
     };

@@ -6,6 +6,7 @@ namespace Core {
     enum class Screen {
         MAIN,
         GAME_SELECT,
+        RESTORE_SELECT,
         SETTINGS,
         OAUTH_MODAL,
         OPERATION_PROGRESS,
