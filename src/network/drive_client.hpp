@@ -48,6 +48,9 @@ namespace Network {
         void setClientSecret(std::string_view secret) { m_clientSecret = secret; }
         const std::string& getAccessToken() const noexcept { return m_accessToken; }
         const std::string& getRefreshToken() const noexcept { return m_refreshToken; }
+        void setAccessToken(std::string_view token) { m_accessToken = token; }
+        void setRefreshToken(std::string_view token) { m_refreshToken = token; }
+        void setFolderId(std::string_view id) { m_folderId = id; }
 
         // Teste de conectividade com a API
         bool testConnection(std::string* outError = nullptr);

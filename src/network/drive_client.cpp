@@ -199,11 +199,16 @@ namespace Network {
         curl_easy_setopt(curl.get(), CURLOPT_URL, urlStr.c_str());
 
         Core::UniqueCurlSlist headers;
+        if (!postStr.empty() && postStr.front() == '{') {
+            headers.reset(curl_slist_append(headers.release(), "Content-Type: application/json; charset=UTF-8"));
+        } else {
+            headers.reset(curl_slist_append(headers.release(), "Content-Type: application/x-www-form-urlencoded"));
+        }
         if (!bearerToken.empty()) {
             std::string authHdr = "Authorization: Bearer " + std::string(bearerToken);
             headers.reset(curl_slist_append(headers.release(), authHdr.c_str()));
-            curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
         }
+        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
 
         CURLcode res = executeCurlRequest(curl.get(), &resp, cancelToken);
         return (res == CURLE_OK) ? resp : "";
@@ -227,11 +232,16 @@ namespace Network {
         curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, postStr.c_str());
 
         Core::UniqueCurlSlist headers;
+        if (!postStr.empty() && postStr.front() == '{') {
+            headers.reset(curl_slist_append(headers.release(), "Content-Type: application/json; charset=UTF-8"));
+        } else {
+            headers.reset(curl_slist_append(headers.release(), "Content-Type: application/x-www-form-urlencoded"));
+        }
         if (!bearerToken.empty()) {
             std::string authHdr = "Authorization: Bearer " + std::string(bearerToken);
             headers.reset(curl_slist_append(headers.release(), authHdr.c_str()));
-            curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
         }
+        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
 
         CURLcode res = executeCurlRequest(curl.get(), &resp, cancelToken);
         return (res == CURLE_OK) ? resp : "";
@@ -311,16 +321,54 @@ namespace Network {
     std::string DriveClient::ensureFolderExists(std::string_view folderName, const std::atomic<bool>* cancelToken) {
         refreshAccessToken(nullptr, cancelToken);
 
-        std::string q = "mimeType='application/vnd.google-apps.folder' and name='" + std::string(folderName) + "' and trashed=false";
-        std::string url = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(q) + "&fields=files(id,name)";
+        // 1. Reutiliza m_folderId salvo no config.json se ainda existir no Drive
+        if (!m_folderId.empty()) {
+            std::string checkUrl = "https://www.googleapis.com/drive/v3/files/" + m_folderId + "?fields=id,name,trashed";
+            std::string checkResp = httpGet(checkUrl, m_accessToken, cancelToken);
+            if (!checkResp.empty() && checkResp.find("\"error\"") == std::string::npos) {
+                std::string verifiedId = extractJsonString(checkResp, "id");
+                if (!verifiedId.empty()) {
+                    if (checkResp.find("\"trashed\": true") != std::string::npos ||
+                        checkResp.find("\"trashed\":true") != std::string::npos) {
+                        httpPatch("https://www.googleapis.com/drive/v3/files/" + verifiedId, "{\"trashed\": false}", m_accessToken, cancelToken);
+                    }
+                    return verifiedId;
+                }
+            }
+        }
+
+        // 2. Busca pasta raiz mais antiga (orderBy=createdTime) para evitar duplicatas
+        std::string q = "mimeType='application/vnd.google-apps.folder' and name='" + std::string(folderName) + "' and 'root' in parents and trashed=false";
+        std::string url = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(q) + "&fields=files(id,name)&orderBy=createdTime";
         std::string resp = httpGet(url, m_accessToken, cancelToken);
+
+        // Guarda anti-duplicação: nunca cria pasta nova se a consulta GET falhou
+        if (resp.empty() || resp.find("\"error\"") != std::string::npos || resp.find("\"files\"") == std::string::npos) {
+            Utils::Logger::log("DRIVE", "Falha ao consultar pasta raiz no Drive; abortando criação para evitar duplicatas.");
+            return "";
+        }
 
         std::string foundId = extractJsonString(resp, "id");
         if (!foundId.empty()) {
             m_folderId = foundId;
+            saveConfig();
             return foundId;
         }
 
+        // 3. Verifica também na lixeira antes de criar uma nova pasta
+        std::string trashQ = "mimeType='application/vnd.google-apps.folder' and name='" + std::string(folderName) + "' and 'root' in parents and trashed=true";
+        std::string trashUrl = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(trashQ) + "&fields=files(id,name)&orderBy=createdTime";
+        std::string trashResp = httpGet(trashUrl, m_accessToken, cancelToken);
+        std::string trashedId = extractJsonString(trashResp, "id");
+        if (!trashedId.empty()) {
+            httpPatch("https://www.googleapis.com/drive/v3/files/" + trashedId, "{\"trashed\": false}", m_accessToken, cancelToken);
+            m_folderId = trashedId;
+            saveConfig();
+            Utils::Logger::log("DRIVE", "Pasta raiz recuperada da lixeira: " + trashedId);
+            return trashedId;
+        }
+
+        // 4. Somente cria nova pasta se confirmado que não existe nenhuma
         std::string createJson = "{\"name\": \"" + std::string(folderName) + "\", \"mimeType\": \"application/vnd.google-apps.folder\"}";
         std::string createResp = httpPost("https://www.googleapis.com/drive/v3/files", createJson, m_accessToken, cancelToken);
         std::string newId = extractJsonString(createResp, "id");
@@ -337,11 +385,16 @@ namespace Network {
         std::string_view parentFolderId,
         const std::atomic<bool>* cancelToken
     ) {
+        if (parentFolderId.empty()) return "";
         refreshAccessToken(nullptr, cancelToken);
 
         std::string q = "mimeType='application/vnd.google-apps.folder' and name='" + std::string(folderName) + "' and '" + std::string(parentFolderId) + "' in parents and trashed=false";
-        std::string url = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(q) + "&fields=files(id,name)";
+        std::string url = "https://www.googleapis.com/drive/v3/files?q=" + urlEncode(q) + "&fields=files(id,name)&orderBy=createdTime";
         std::string resp = httpGet(url, m_accessToken, cancelToken);
+
+        if (resp.empty() || resp.find("\"error\"") != std::string::npos || resp.find("\"files\"") == std::string::npos) {
+            return "";
+        }
 
         std::string foundId = extractJsonString(resp, "id");
         if (!foundId.empty()) {

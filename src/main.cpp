@@ -20,13 +20,24 @@ int main(int argc, char* argv[]) {
     Utils::Logger::log("MAIN", "Iniciando Google Drive Cloud Save Suite (gdrive-sync)");
 
 #ifdef __SWITCH__
+    // Serviços de idioma do sistema e rede (essenciais para NACP e DNS/libcurl)
+    Result setRc = setInitialize();
+    auto setGuard = Core::makeScopeGuard([setRc]() {
+        if (R_SUCCEEDED(setRc)) setExit();
+    });
+
+    Result nifmRc = nifmInitialize(NifmServiceType_User);
+    auto nifmGuard = Core::makeScopeGuard([nifmRc]() {
+        if (R_SUCCEEDED(nifmRc)) nifmExit();
+    });
+
     // Rede via sockets para libcurl/mbedTLS
     Result sockRc = socketInitializeDefault();
     if (R_FAILED(sockRc)) {
         Utils::Logger::log("MAIN", "Falha ao inicializar socket libnx");
     }
-    auto sockGuard = Core::makeScopeGuard([]() {
-        socketExit();
+    auto sockGuard = Core::makeScopeGuard([sockRc]() {
+        if (R_SUCCEEDED(sockRc)) socketExit();
     });
 
     // Configuração de entrada dos controles (Pad)

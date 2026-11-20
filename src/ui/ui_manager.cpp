@@ -51,9 +51,9 @@ namespace UI {
                     m_screenSelect.refreshGames();
                     m_stateMachine.setScreen(Core::Screen::GAME_SELECT);
                 } else if (sel == 3) {
-                    if (m_oauth.startDeviceAuth()) {
-                        m_stateMachine.setScreen(Core::Screen::OAUTH_MODAL);
-                    }
+                    // Sempre abre o modal de vinculação (exibe código ou erro detalhado)
+                    m_oauth.startDeviceAuth();
+                    m_stateMachine.setScreen(Core::Screen::OAUTH_MODAL);
                 }
             } else if ((kDown & HidNpadButton_Minus) || (kDown & HidNpadButton_Y)) {
                 m_stateMachine.setScreen(Core::Screen::SETTINGS);
@@ -69,7 +69,6 @@ namespace UI {
             }
 #endif
         } else if (curScreen == Core::Screen::SETTINGS) {
-            m_screenSelect.handleInput(kDown);
 #ifdef __SWITCH__
             if (kDown & HidNpadButton_B) {
                 m_stateMachine.setScreen(Core::Screen::MAIN);
@@ -90,6 +89,9 @@ namespace UI {
             if (kDown & HidNpadButton_B) {
                 m_oauth.cancelAuth();
                 m_stateMachine.setScreen(Core::Screen::MAIN);
+            } else if (kDown & HidNpadButton_X) {
+                // Tentar gerar novo código OAuth2
+                m_oauth.startDeviceAuth();
             }
 #endif
         } else if (curScreen == Core::Screen::OPERATION_PROGRESS) {
@@ -140,7 +142,7 @@ namespace UI {
         m_display.drawText(modalX + 28, curY, "OAuth Client ID", 14, Colors::TEXT_MUTED);
         curY += 24;
         std::string cid = m_client.getClientId();
-        std::string shortCid = cid.empty() ? "Não Configurado" : (cid.substr(0, 20) + "...");
+        std::string shortCid = cid.empty() ? "Não Configurado" : (cid.substr(0, std::min<size_t>(20, cid.size())) + "...");
         m_display.drawText(modalX + 28, curY, shortCid, 16, Colors::TEXT_PRIMARY);
 
         curY += 56;
@@ -155,14 +157,31 @@ namespace UI {
     void UIManager::renderOAuthModal() {
         m_display.drawRect(0, 0, static_cast<int>(m_display.getWidth()), static_cast<int>(m_display.getHeight()), RGBA(0, 0, 0, 180));
 
-        int modalW = 640;
-        int modalH = 380;
+        int modalW = 680;
+        int modalH = 400;
         int modalX = (static_cast<int>(m_display.getWidth()) - modalW) / 2;
         int modalY = (static_cast<int>(m_display.getHeight()) - modalH) / 2;
 
         m_display.drawRoundedRect(modalX, modalY, modalW, modalH, 16, Colors::CARD_BG);
         m_display.drawRoundedRect(modalX, modalY, modalW, 64, 16, Colors::HEADER_BG);
         m_display.drawText(modalX + 28, modalY + 20, "Vincular Conta Google", 22, Colors::TEXT_WHITE);
+
+        if (m_oauth.getState() == Network::OAuthState::FAILED) {
+            m_display.drawText(modalX + 28, modalY + 94, "Não foi possível iniciar o pareamento OAuth 2.0:", 17, Colors::STATUS_RED);
+
+            std::string errMsg = m_oauth.getErrorMessage();
+            if (errMsg.empty()) errMsg = "Erro desconhecido ao contatar oauth2.googleapis.com";
+            m_display.drawRoundedRect(modalX + 28, modalY + 130, modalW - 56, 76, 10, Colors::CARD_ALT_BG);
+            m_display.drawText(modalX + 42, modalY + 156, errMsg, 15, Colors::JOYCON_YELLOW);
+
+            m_display.drawText(modalX + 28, modalY + 230, "Verifique:", 15, Colors::TEXT_WHITE);
+            m_display.drawText(modalX + 36, modalY + 256, "• Arquivo sdmc:/config/gdrive-sync/config.json possui client_id válido", 14, Colors::TEXT_MUTED);
+            m_display.drawText(modalX + 36, modalY + 280, "• Conexão Wi-Fi ativa e relógio do Switch ajustado", 14, Colors::TEXT_MUTED);
+            m_display.drawText(modalX + 36, modalY + 304, "• Client ID do tipo TVs e dispositivos de entrada limitada", 14, Colors::TEXT_MUTED);
+
+            m_display.drawText(modalX + 28, modalY + modalH - 36, "(X) Tentar Novamente   (B) Fechar", 16, Colors::JOYCON_CYAN);
+            return;
+        }
 
         m_display.drawText(modalX + 28, modalY + 90, "1. No celular ou computador, acesse o endereço abaixo:", 16, Colors::TEXT_MUTED);
         m_display.drawText(modalX + 28, modalY + 116, m_oauth.getVerificationUrl(), 20, Colors::JOYCON_CYAN);
@@ -178,7 +197,7 @@ namespace UI {
         m_display.drawText(codeX, modalY + 208, code, 32, Colors::JOYCON_YELLOW);
 
         m_display.drawText(modalX + 28, modalY + 285, "Aguardando confirmação remota da conta...", 14, Colors::TEXT_MUTED);
-        m_display.drawText(modalX + 28, modalY + modalH - 36, "(B) Cancelar", 16, Colors::TEXT_MUTED);
+        m_display.drawText(modalX + 28, modalY + modalH - 36, "(X) Novo Código   (B) Cancelar", 16, Colors::TEXT_MUTED);
     }
 
     void UIManager::renderOperationModal() {

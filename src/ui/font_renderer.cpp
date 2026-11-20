@@ -81,21 +81,33 @@ namespace UI {
         auto c = static_cast<unsigned char>(*ptr++);
         if (c < 0x80) return c;
         if ((c & 0xE0) == 0xC0 && ptr < end) {
-            auto c2 = static_cast<unsigned char>(*ptr++);
-            return ((c & 0x1F) << 6) | (c2 & 0x3F);
+            auto c2 = static_cast<unsigned char>(*ptr);
+            if ((c2 & 0xC0) == 0x80) {
+                ++ptr;
+                return ((c & 0x1F) << 6) | (c2 & 0x3F);
+            }
+            return c; // Fallback Latin-1 sem corromper o próximo caractere
         }
         if ((c & 0xF0) == 0xE0 && ptr + 1 < end) {
-            auto c2 = static_cast<unsigned char>(*ptr++);
-            auto c3 = static_cast<unsigned char>(*ptr++);
-            return ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+            auto c2 = static_cast<unsigned char>(ptr[0]);
+            auto c3 = static_cast<unsigned char>(ptr[1]);
+            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) {
+                ptr += 2;
+                return ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+            }
+            return c;
         }
         if ((c & 0xF8) == 0xF0 && ptr + 2 < end) {
-            auto c2 = static_cast<unsigned char>(*ptr++);
-            auto c3 = static_cast<unsigned char>(*ptr++);
-            auto c4 = static_cast<unsigned char>(*ptr++);
-            return ((c & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
+            auto c2 = static_cast<unsigned char>(ptr[0]);
+            auto c3 = static_cast<unsigned char>(ptr[1]);
+            auto c4 = static_cast<unsigned char>(ptr[2]);
+            if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80 && (c4 & 0xC0) == 0x80) {
+                ptr += 3;
+                return ((c & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
+            }
+            return c;
         }
-        return 0xFFFD;
+        return c;
     }
 
     const CachedGlyph* FontRenderer::getGlyph(uint32_t codepoint, int pixelHeight) {
