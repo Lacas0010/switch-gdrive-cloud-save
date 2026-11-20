@@ -1,6 +1,7 @@
 #include "oauth_manager.hpp"
 #include "../utils/log.hpp"
 #include <cstdio>
+#include <algorithm>
 
 namespace Network {
 

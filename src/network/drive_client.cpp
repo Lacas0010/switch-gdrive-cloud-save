@@ -199,16 +199,11 @@ namespace Network {
         curl_easy_setopt(curl.get(), CURLOPT_URL, urlStr.c_str());
 
         Core::UniqueCurlSlist headers;
-        if (!postStr.empty() && postStr.front() == '{') {
-            headers.reset(curl_slist_append(headers.release(), "Content-Type: application/json; charset=UTF-8"));
-        } else {
-            headers.reset(curl_slist_append(headers.release(), "Content-Type: application/x-www-form-urlencoded"));
-        }
         if (!bearerToken.empty()) {
             std::string authHdr = "Authorization: Bearer " + std::string(bearerToken);
             headers.reset(curl_slist_append(headers.release(), authHdr.c_str()));
+            curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
         }
-        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
 
         CURLcode res = executeCurlRequest(curl.get(), &resp, cancelToken);
         return (res == CURLE_OK) ? resp : "";
