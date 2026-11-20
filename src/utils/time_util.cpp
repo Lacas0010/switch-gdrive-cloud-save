@@ -52,15 +52,17 @@ namespace Utils {
     std::string TimeUtil::formatUtcDateTime(std::time_t epochSeconds) {
         if (epochSeconds <= 0) return "Nunca";
 
+        // Converte para UTC-3 (Horário de Brasília / BRT)
+        std::time_t brtSeconds = epochSeconds - (3 * 3600);
         struct tm ti;
 #if defined(_WIN32)
-        gmtime_s(&ti, &epochSeconds);
+        gmtime_s(&ti, &brtSeconds);
 #else
-        gmtime_r(&epochSeconds, &ti);
+        gmtime_r(&brtSeconds, &ti);
 #endif
 
         char buf[64];
-        std::snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d UTC",
+        std::snprintf(buf, sizeof(buf), "%02d/%02d/%04d %02d:%02d BRT",
                       ti.tm_mday, ti.tm_mon + 1, ti.tm_year + 1900,
                       ti.tm_hour, ti.tm_min);
         return std::string(buf);

@@ -2,6 +2,7 @@
 #include "../utils/log.hpp"
 #include <cstdio>
 #include <cstring>
+#include <zlib.h>
 
 #define STB_IMAGE_STATIC
 #define STBI_NO_STDIO
@@ -48,7 +49,6 @@ namespace UI {
                     ++i;
                     continue;
                 }
-                // Valida sequência UTF-8 de 2 bytes
                 if ((c & 0xE0) == 0xC0 && i + 1 < len) {
                     unsigned char c2 = static_cast<unsigned char>(raw[i + 1]);
                     if ((c2 & 0xC0) == 0x80) {
@@ -58,14 +58,12 @@ namespace UI {
                         continue;
                     }
                 }
-                // Valida sequência UTF-8 de 3 bytes
                 if ((c & 0xF0) == 0xE0 && i + 2 < len) {
                     unsigned char c2 = static_cast<unsigned char>(raw[i + 1]);
                     unsigned char c3 = static_cast<unsigned char>(raw[i + 2]);
                     if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) {
                         uint32_t cp = ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
-                        // Ignora símbolos de marca registrada (™ U+2122) ou substitui traços/aspas especiais
-                        if (cp == 0x2122) {
+                        if (cp == 0x2122) { // Remove símbolo ™ (U+2122)
                             i += 3;
                             continue;
                         }
@@ -76,7 +74,6 @@ namespace UI {
                         continue;
                     }
                 }
-                // Valida sequência UTF-8 de 4 bytes
                 if ((c & 0xF8) == 0xF0 && i + 3 < len) {
                     unsigned char c2 = static_cast<unsigned char>(raw[i + 1]);
                     unsigned char c3 = static_cast<unsigned char>(raw[i + 2]);
@@ -90,13 +87,83 @@ namespace UI {
                         continue;
                     }
                 }
-                // Byte Latin-1/ISO-8859-1 isolado (comum em traduções/mods BR de NACP): converte para UTF-8
                 out.push_back(static_cast<char>(0xC0 | (c >> 6)));
                 out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
                 ++i;
             }
             return out;
         }
+
+#ifdef __SWITCH__
+        // Descomprime NACP comprimido (Horizon OS 19.x/20.x+, titles_data_format == 1 em offset 0x3215)
+        // Bloco 0x0000..0x2FFF: u16 compSize (little-endian) + payload raw DEFLATE -> 0x6000 bytes (32 x NacpLanguageEntry)
+        static bool decompressNacpLangEntries(const uint8_t* nacpRaw, std::vector<NacpLanguageEntry>& outEntries) {
+            uint16_t compSize = static_cast<uint16_t>(nacpRaw[0]) | (static_cast<uint16_t>(nacpRaw[1]) << 8);
+            if (compSize == 0 || compSize > (0x3000 - 2)) {
+                return false;
+            }
+
+            outEntries.assign(32, NacpLanguageEntry{});
+            const size_t expectedOutBytes = 32 * sizeof(NacpLanguageEntry); // 0x6000
+
+            auto tryInflate = [&](int windowBits) -> bool {
+                std::memset(outEntries.data(), 0, expectedOutBytes);
+                z_stream zs{};
+                zs.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(nacpRaw + 2));
+                zs.avail_in = compSize;
+                zs.next_out = reinterpret_cast<Bytef*>(outEntries.data());
+                zs.avail_out = static_cast<uInt>(expectedOutBytes);
+
+                if (inflateInit2(&zs, windowBits) != Z_OK) {
+                    return false;
+                }
+                int ret = inflate(&zs, Z_FINISH);
+                size_t produced = zs.total_out;
+                inflateEnd(&zs);
+                return (ret == Z_STREAM_END || (ret == Z_OK && produced >= sizeof(NacpLanguageEntry)));
+            };
+
+            // Tenta raw DEFLATE (-MAX_WBITS = -15) conforme especificação HOS 19+/20+, depois zlib padrão
+            if (tryInflate(-MAX_WBITS)) return true;
+            if (tryInflate(MAX_WBITS)) return true;
+            return false;
+        }
+
+        static void selectBestLangEntry(
+            const NacpLanguageEntry* entries,
+            size_t count,
+            std::string& outName,
+            std::string& outAuthor
+        ) {
+            // Prioridade: PT-BR (15), PT (10), EN-US (0), EN-GB (1), ES-419 (5), ES (6), demais latinos, depois restantes
+            static constexpr size_t kPreferredSlots[] = {
+                15, 10, 0, 1, 5, 6, 3, 4, 7, 8, 9, 2, 11, 12, 13, 14
+            };
+            for (size_t slot : kPreferredSlots) {
+                if (slot >= count) continue;
+                if (entries[slot].name[0] != '\0') {
+                    std::string candidate = sanitizeNacpString(entries[slot].name, sizeof(entries[slot].name));
+                    if (!candidate.empty()) {
+                        outName = candidate;
+                        outAuthor = sanitizeNacpString(entries[slot].author, sizeof(entries[slot].author));
+                        if (hasReadableLatin(candidate)) {
+                            return;
+                        }
+                    }
+                }
+            }
+            for (size_t slot = 16; slot < count; ++slot) {
+                if (entries[slot].name[0] != '\0') {
+                    std::string candidate = sanitizeNacpString(entries[slot].name, sizeof(entries[slot].name));
+                    if (!candidate.empty() && hasReadableLatin(candidate)) {
+                        outName = candidate;
+                        outAuthor = sanitizeNacpString(entries[slot].author, sizeof(entries[slot].author));
+                        return;
+                    }
+                }
+            }
+        }
+#endif
     } // namespace
 
     TextureCache::TextureCache()
@@ -159,32 +226,28 @@ namespace UI {
             std::string chosenName;
             std::string chosenAuthor;
 
-            // 1. Tenta idioma do sistema via libnx
-            NacpLanguageEntry* langEntry = nullptr;
-            Result nrc = nacpGetLanguageEntry(&controlData->nacp, &langEntry);
-            if (R_SUCCEEDED(nrc) && langEntry && langEntry->name[0] != '\0') {
-                std::string candidate = sanitizeNacpString(langEntry->name, sizeof(langEntry->name));
-                if (hasReadableLatin(candidate)) {
-                    chosenName = candidate;
-                    chosenAuthor = sanitizeNacpString(langEntry->author, sizeof(langEntry->author));
-                }
-            }
+            const uint8_t* nacpRaw = reinterpret_cast<const uint8_t*>(&controlData->nacp);
+            uint8_t titlesDataFormat = nacpRaw[0x3215];
 
-            // 2. Fallback inteligente priorizando PT-BR, PT, EN-US, EN-GB, ES (evita fallback CJK/japonês)
-            if (chosenName.empty()) {
-                static constexpr int kPreferredSlots[] = {15, 10, 0, 1, 5, 6, 3, 4, 7, 8, 9, 2, 11, 12, 13, 14};
-                for (int slot : kPreferredSlots) {
-                    const NacpLanguageEntry& entry = controlData->nacp.lang[slot];
-                    if (entry.name[0] != '\0') {
-                        std::string candidate = sanitizeNacpString(entry.name, sizeof(entry.name));
-                        if (!candidate.empty()) {
-                            chosenName = candidate;
-                            chosenAuthor = sanitizeNacpString(entry.author, sizeof(entry.author));
-                            if (hasReadableLatin(candidate)) {
-                                break;
-                            }
-                        }
+            if (titlesDataFormat == 1) {
+                // Formato NACP comprimido (HOS 19+/20+: Zelda BotW 1.9.0+, Mario Wonder atualizado, etc.)
+                std::vector<NacpLanguageEntry> decompressedEntries;
+                if (decompressNacpLangEntries(nacpRaw, decompressedEntries)) {
+                    selectBestLangEntry(decompressedEntries.data(), decompressedEntries.size(), chosenName, chosenAuthor);
+                }
+            } else {
+                // Formato NACP clássico (descomprimido, 16 slots em 0x0000..0x2FFF)
+                NacpLanguageEntry* langEntry = nullptr;
+                Result nrc = nacpGetLanguageEntry(&controlData->nacp, &langEntry);
+                if (R_SUCCEEDED(nrc) && langEntry && langEntry->name[0] != '\0') {
+                    std::string candidate = sanitizeNacpString(langEntry->name, sizeof(langEntry->name));
+                    if (hasReadableLatin(candidate)) {
+                        chosenName = candidate;
+                        chosenAuthor = sanitizeNacpString(langEntry->author, sizeof(langEntry->author));
                     }
+                }
+                if (chosenName.empty()) {
+                    selectBestLangEntry(controlData->nacp.lang, 16, chosenName, chosenAuthor);
                 }
             }
 
