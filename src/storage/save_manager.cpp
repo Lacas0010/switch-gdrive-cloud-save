@@ -47,11 +47,12 @@ namespace Storage {
 
     bool SaveManager::getActiveAccount(AccountUid& outUid) {
 #ifdef __SWITCH__
-        Result rc = accountInitialize(AccountServiceType_Application);
+        // Administrator/System são necessários para accountGetLastOpenedUser e accountListAllUsers em Applet Mode
+        Result rc = accountInitialize(AccountServiceType_Administrator);
         if (R_FAILED(rc)) {
             rc = accountInitialize(AccountServiceType_System);
             if (R_FAILED(rc)) {
-                rc = accountInitialize(AccountServiceType_Administrator);
+                rc = accountInitialize(AccountServiceType_Application);
                 if (R_FAILED(rc)) return false;
             }
         }
@@ -267,8 +268,15 @@ namespace Storage {
         // 3. Monta particao de save via RAII
         Core::ScopedMountedSave saveMount(baseTitleId, uid);
         if (!saveMount.isMounted()) {
+            char errBuf[160];
+            Result mrc = saveMount.getLastError();
+            if (mrc == 0x202) {
+                std::snprintf(errBuf, sizeof(errBuf), "Save não existe no Switch: abra o jogo 1x antes de restaurar (0x%X).", mrc);
+            } else {
+                std::snprintf(errBuf, sizeof(errBuf), "Falha ao montar save:/ (rc=0x%X). Feche o jogo se estiver aberto.", mrc);
+            }
             res.success = false;
-            res.errorMessage = "Falha ao montar particao save:/ no Horizon OS.";
+            res.errorMessage = errBuf;
             Utils::Logger::logRestore(baseTitleId, res.errorMessage);
             return res;
         }

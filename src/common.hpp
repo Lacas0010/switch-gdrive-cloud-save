@@ -107,12 +107,16 @@ namespace Core {
     class ScopedMountedSave {
     public:
         ScopedMountedSave(u64 titleId, AccountUid uid, bool readOnly = false)
-            : m_mounted(false), m_committed(false) {
+            : m_mounted(false), m_committed(false), m_lastError(0) {
             fsdevUnmountDevice("save");
             Result rc = fsdevMountSaveData("save", titleId, uid);
             if (R_FAILED(rc)) {
-                rc = fsdevMountDeviceSaveData("save", titleId);
+                Result devRc = fsdevMountDeviceSaveData("save", titleId);
+                if (R_SUCCEEDED(devRc)) {
+                    rc = devRc;
+                }
             }
+            m_lastError = rc;
             m_mounted = R_SUCCEEDED(rc);
             (void)readOnly;
         }
@@ -124,6 +128,7 @@ namespace Core {
         }
 
         bool isMounted() const noexcept { return m_mounted; }
+        Result getLastError() const noexcept { return m_lastError; }
 
         bool commit() noexcept {
             if (!m_mounted) return false;
@@ -140,6 +145,7 @@ namespace Core {
     private:
         bool m_mounted;
         bool m_committed;
+        Result m_lastError;
     };
 #endif
 
