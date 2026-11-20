@@ -634,10 +634,13 @@ namespace Network {
                           "&fields=" + urlEncode("files(id,name,modifiedTime,size)") + "&pageSize=100";
 
         std::string resp = httpGet(url, m_accessToken, cancelToken);
-        size_t cur = 0;
-        while ((cur = resp.find("{\"id\":", cur)) != std::string::npos) {
-            size_t objEnd = resp.find("}", cur);
-            if (objEnd == std::string::npos) break;
+        size_t filesPos = resp.find("\"files\"");
+        size_t arrStart = (filesPos != std::string::npos) ? resp.find('[', filesPos) : std::string::npos;
+        size_t arrEnd = (arrStart != std::string::npos) ? resp.rfind(']') : std::string::npos;
+        size_t cur = (arrStart != std::string::npos) ? (arrStart + 1) : std::string::npos;
+        while (cur != std::string::npos && cur < arrEnd && (cur = resp.find('{', cur)) != std::string::npos && cur < arrEnd) {
+            size_t objEnd = resp.find('}', cur);
+            if (objEnd == std::string::npos || objEnd > arrEnd) break;
 
             std::string_view obj = std::string_view(resp).substr(cur, objEnd - cur + 1);
             DriveFileInfo info;
@@ -690,10 +693,13 @@ namespace Network {
                           "&orderBy=" + urlEncode("modifiedTime desc");
 
         std::string resp = httpGet(url, m_accessToken, cancelToken);
-        size_t cur = 0;
-        while ((cur = resp.find("{\"id\":", cur)) != std::string::npos) {
-            size_t objEnd = resp.find("}", cur);
-            if (objEnd == std::string::npos) break;
+        size_t filesPos = resp.find("\"files\"");
+        size_t arrStart = (filesPos != std::string::npos) ? resp.find('[', filesPos) : std::string::npos;
+        size_t arrEnd = (arrStart != std::string::npos) ? resp.rfind(']') : std::string::npos;
+        size_t cur = (arrStart != std::string::npos) ? (arrStart + 1) : std::string::npos;
+        while (cur != std::string::npos && cur < arrEnd && (cur = resp.find('{', cur)) != std::string::npos && cur < arrEnd) {
+            size_t objEnd = resp.find('}', cur);
+            if (objEnd == std::string::npos || objEnd > arrEnd) break;
 
             std::string_view obj = std::string_view(resp).substr(cur, objEnd - cur + 1);
             DriveSnapshotVersion ver;
